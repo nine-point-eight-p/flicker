@@ -1,0 +1,7 @@
+.vscode/
+/target
+/crashes
+/corpus/gen
+/kernel
+*.log
+*.out

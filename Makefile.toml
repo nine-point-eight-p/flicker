@@ -1,0 +1,125 @@
+[env]
+PROFILE = { value = "release", condition = { env_not_set = ["PROFILE"] } }
+TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
+TARGET_DEFINE = "TARGET_SYNC_EXIT"
+KERNEL_NAME = { value = "xv6-x86_64", condition = { env_not_set = ["KERNEL_NAME"] } }
+KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
+LLVM_CONFIG = "15"
+
+[tasks.target_dir]
+condition = { files_not_exist = [ "${TARGET_DIR}" ] }
+script_runner = "@shell"
+script = """
+mkdir -p ${TARGET_DIR}
+"""
+
+[tasks.target]
+dependencies = ["target_dir"]
+script_runner = "@shell"
+script = """
+make -C ${KERNEL_DIR} CFLAGS_EXTRA="-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include"
+"""
+
+[tasks.target_image]
+condition = { env_contains = { "KERNEL_NAME" = "xv6" } }
+script_runner = "@shell"
+script = """
+qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/xv6.img ${KERNEL_DIR}/xv6.qcow2
+qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/fs.img ${KERNEL_DIR}/fs.qcow2
+"""
+
+[tasks.dummy_image]
+condition = { files_not_exist = [ "${TARGET_DIR}/dummy.qcow2" ] }
+dependencies = ["target_dir"]
+script_runner = "@shell"
+script = """
+qemu-img create -f qcow2 ${TARGET_DIR}/dummy.qcow2 32M
+"""
+
+[tasks.build_fuzzer]
+command = "cargo"
+args = [
+    "build",
+    "--profile", "${PROFILE}",
+    "--no-default-features",
+    "--features", "std",
+    "--target-dir", "${TARGET_DIR}",
+    "-v",
+]
+
+[tasks.run_fuzzer_helloworld_os]
+command = "${TARGET_DIR}/${PROFILE}/x86-qemu-fuzzer"
+args = [
+    "--",
+    # "-machine", "q35", # q35 not working
+    "-kernel", "${KERNEL_DIR}/build/kernel.bin",
+    "-drive", "if=none,format=qcow2,file=${TARGET_DIR}/dummy.qcow2",
+    "-L", "/usr/local/share/qemu",
+    "-nographic",
+]
+
+[tasks.run_fuzzer_xv6-public]
+command = "${TARGET_DIR}/${PROFILE}/x86-qemu-fuzzer"
+args = [
+    "--",
+    "-drive", "file=xv6memfs.img,index=0,media=disk,format=raw",
+    "-smp", "1",
+    "-m", "256",
+    "-nographic",
+]
+
+[tasks.run_fuzzer_xv6-x86_64]
+command = "${TARGET_DIR}/${PROFILE}/x86-qemu-fuzzer"
+args = [
+    "--",
+    "-nic", "none",
+    "-drive", "file=${KERNEL_DIR}/fs.qcow2,index=1,media=disk",
+    "-drive", "file=${KERNEL_DIR}/xv6.qcow2,index=0,media=disk",
+    "-drive", "if=none,format=qcow2,file=${TARGET_DIR}/dummy.qcow2",
+    "-L", "/usr/local/share/qemu",
+    "-smp", "1",
+    "-m", "256",
+    "-nographic",
+]
+
+[tasks.run_fuzzer]
+dependencies = ["build_fuzzer", "target", "target_image", "dummy_image"]
+run_task = [
+    { name = "run_fuzzer_helloworld_os", condition = { env = { "KERNEL_NAME" = "helloworld_os" } } },
+    { name = "run_fuzzer_xv6-public", condition = { env = { "KERNEL_NAME" = "xv6-public" } } },
+    { name = "run_fuzzer_xv6-x86_64", condition = { env = { "KERNEL_NAME" = "xv6-x86_64" } } },
+]
+
+[tasks.test_fuzzer]
+script_runner="@shell"
+script = """
+TMP_DIR=$(mktemp -d)
+
+cargo make build_$FEATURE
+timeout 15s cargo make ${FEATURE} | tee $TMP_DIR/fuzz.log 2>&1 || true
+
+if [ -z "$(grep 'Objective' $TMP_DIR/fuzz.log)" ]; then
+    echo "Fuzzer did not find the objective in $TMP_DIR/fuzz.log"
+    exit 1
+else
+    echo "Objective found."
+fi
+"""
+
+[tasks.build]
+alias = "build_fuzzer"
+
+[tasks.test]
+alias = "test_fuzzer"
+
+[tasks.run]
+alias = "run_fuzzer"
+
+[tasks.clean]
+clear = true
+script_runner = "@shell"
+script = """
+cargo clean
+rm -rf ${CARGO_MAKE_CRATE_TARGET_DIRECTORY}
+make clean -C ${KERNEL_DIR}
+"""
