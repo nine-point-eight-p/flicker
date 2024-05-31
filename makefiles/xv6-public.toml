@@ -1,0 +1,23 @@
+extend = "../Makefile.toml"
+
+[env]
+KERNEL_NAME = "xv6-public"
+
+[tasks.kernel_image]
+script_runner = "@shell"
+script = """
+qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/xv6.img ${KERNEL_DIR}/xv6.qcow2
+qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/fs.img ${KERNEL_DIR}/fs.qcow2
+"""
+
+[tasks.run_fuzzer]
+clear = true
+dependencies = ["run_fuzzer_base"]
+command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
+args = [
+    "--",
+    "-drive", "file=xv6memfs.img,index=0,media=disk,format=raw",
+    "-smp", "1",
+    "-m", "256",
+    "-nographic",
+]
