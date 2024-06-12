@@ -3,7 +3,6 @@
 use core::{ptr::addr_of_mut, time::Duration};
 use std::{env, path::PathBuf};
 
-use crate::parse::Args;
 use libafl::{
     corpus::{Corpus, InMemoryOnDiskCorpus, OnDiskCorpus},
     events::{launcher::Launcher, EventConfig, CTRL_C_EXIT},
@@ -38,6 +37,8 @@ use libafl_qemu::{
 };
 
 // use libafl_qemu::QemuSnapshotBuilder; for normal qemu snapshot
+
+use crate::parse::Args;
 
 pub fn fuzz(args: Args) {
     let Args {
@@ -190,6 +191,7 @@ pub fn fuzz(args: Args) {
             {
                 println!("We imported {} inputs from disk.", state.corpus().count());
             } else {
+                println!("Failed to import initial inputs, try to generate");
                 let mut generator = RandBytesGenerator::new(64);
                 state
                     .generate_initial_inputs(

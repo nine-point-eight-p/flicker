@@ -4,8 +4,9 @@ extend = "../Makefile.toml"
 # KERNEL_NAME = "rcore-tutorial-v3-with-hal-component"
 KERNEL_NAME = "rCore-Tutorial-v3"
 KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}/os"
-KERNEL_BIN = "${KERNEL_DIR}/target/x86_64-unknown-none/release/os.bin"
-KERNEL_ENTRY_PA = 0x80200000
+KERNEL_ELF = "${KERNEL_DIR}/target/x86_64-unknown-none/release/os"
+KERNEL_BIN = "${KERNEL_ELF}.bin"
+KERNEL_ENTRY_PA = "0x80200000"
 FS_IMG = "${KERNEL_DIR}/../user/target/x86_64-unknown-none/release/fs.img"
 RUSTUP_TOOLCHAIN = "" # clear env
 
@@ -21,12 +22,14 @@ dependencies = ["run_fuzzer_base"]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "--",
-    # "-machine", "q35",
+    "-machine", "q35",
+    "-cpu", "IvyBridge-v2",
     "-L", "/usr/local/share/qemu",
-    "-kernel", "${KERNEL_BIN}",
-    # "-cpu", "IvyBridge-v2",
+    "-kernel", "${KERNEL_ELF}",
+    "-nic", "none",
     # "-drive", "file=${FS_IMG},if=none,format=raw,id=x0",
-    "-device", "loader,file=${KERNEL_BIN},addr=${KERNEL_ENTRY_PA}",
     "-smp", "1",
     "-nographic",
+    "-D", "qemu.log",
+    "-d", "in_asm,int,pcall,cpu_reset,guest_errors",
 ]

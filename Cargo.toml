@@ -3,28 +3,25 @@ name = "x86-qemu-fuzzer"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["std", "sync_exit"]
-std = []
-
-classic = []    # The classic way to interact with LibAFL QEMU, with direct calls to QEMU's functions
-breakpoint = [] # Uses the command system, with breakpoints
-sync_exit = []  # Uses the command system, with sync exit.
-
 [profile.release]
 incremental = true
 debug = true
 lto = "fat"
 codegen-units = 1
 
+[features]
+default = ["fuzzer"]
+fuzzer = []
+runtime = []
+
 [dependencies]
-libafl = { git = "https://github.com/AFLplusplus/LibAFL.git" }
-libafl_bolts = { git = "https://github.com/AFLplusplus/LibAFL.git" }
-libafl_qemu = { git = "https://github.com/AFLplusplus/LibAFL.git", features = ["x86_64", "systemmode"] }
+libafl = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc" }
+libafl_bolts = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc" }
+libafl_qemu = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc", features = ["x86_64", "systemmode"] }
 clap = { version = "4.5.4", features = ["derive"] }
 
 # You can also use pulled repo if you want to change something of the library
-[patch."https://github.com/AFLplusplus/LibAFL/"]
-libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
-libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
-libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/", features = ["x86_64", "systemmode"] }
+# [patch."https://github.com/AFLplusplus/LibAFL/"]
+# libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
+# libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
+# libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/" }
