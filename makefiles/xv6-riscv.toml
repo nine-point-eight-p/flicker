@@ -1,0 +1,37 @@
+extend = "../Makefile.toml"
+
+[env]
+KERNEL_NAME = "xv6-riscv"
+
+[tasks.kernel]
+script_runner = "@shell"
+script = """
+make -C ${KERNEL_DIR} \
+    kernel/kernel fs.img \
+    CFLAGS_EXTRA="-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include" \
+"""
+
+# [tasks.kernel_image]
+# script_runner = "@shell"
+# script = """
+# qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/fs.img ${KERNEL_DIR}/fs.qcow2
+# """
+
+[tasks.run_fuzzer]
+clear = true
+dependencies = ["run_fuzzer_base"]
+command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
+args = [
+    "--",
+    "-machine", "virt",
+    "-bios", "none",
+    "-kernel", "${KERNEL_DIR}/kernel/kernel",
+    "-m", "128M",
+    "-smp", "1",
+    "-nographic",
+    "-global", "virtio-mmio.force-legacy=false",
+    "-drive", "file=${KERNEL_DIR}/fs.img,if=none,format=raw,id=x0",
+    "-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
+    # "-D", "qemu-xv6.log",
+    # "-d", "in_asm,int,pcall,cpu_reset,guest_errors",
+]

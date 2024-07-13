@@ -14,9 +14,9 @@ fuzzer = []
 runtime = []
 
 [dependencies]
-libafl = "0.13.0"
-libafl_bolts = "0.13.0"
-libafl_qemu = { version = "0.13.0", features = ["x86_64", "systemmode"] }
+libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
+libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
+libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/", features = ["riscv64", "systemmode"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
 
