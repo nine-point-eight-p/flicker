@@ -10,15 +10,15 @@ lto = "fat"
 codegen-units = 1
 
 [features]
-default = ["fuzzer"]
 fuzzer = []
 runtime = []
 
 [dependencies]
-libafl = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc" }
-libafl_bolts = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc" }
-libafl_qemu = { git = "https://github.com/AFLplusplus/LibAFL.git", rev = "b0d592dc", features = ["x86_64", "systemmode"] }
+libafl = "0.13.0"
+libafl_bolts = "0.13.0"
+libafl_qemu = { version = "0.13.0", features = ["x86_64", "systemmode"] }
 clap = { version = "4.5.4", features = ["derive"] }
+env_logger = "0.11.3"
 
 # You can also use pulled repo if you want to change something of the library
 # [patch."https://github.com/AFLplusplus/LibAFL/"]

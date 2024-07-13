@@ -3,9 +3,11 @@ PROFILE = { value = "release", condition = { env_not_set = ["PROFILE"] } }
 TARGET_NAME = "${CARGO_MAKE_CRATE_NAME}"
 TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
 TARGET_DEFINE = "TARGET_SYNC_EXIT"
-# KERNEL_NAME = { value = "xv6_x86-64", condition = { env_not_set = ["KERNEL_NAME"] } }
+KERNEL_NAME = "" # Should be defined by extending according to the kernel
 KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
-LLVM_CONFIG = "15"
+# LibAFL congiuration
+LLVM_CONFIG = "15" # Not necessary, but specify if you encounter "LLVM not found" error
+LIBAFL_QEMU_DIR = "${HOME}/os/qemu-libafl-bridge"
 
 # Templates to be extended
 
@@ -36,8 +38,7 @@ qemu-img create -f qcow2 ${TARGET_DIR}/dummy.qcow2 32M
 command = "cargo"
 args = [
     "build",
-    "--no-default-features",
-    "--features", "runtime",
+    "--features", "fuzzer",
     "--profile", "${PROFILE}",
     "--target-dir", "${TARGET_DIR}",
     "-v",
@@ -47,7 +48,7 @@ args = [
 [tasks.run_fuzzer_base]
 dependencies = ["build_fuzzer", "kernel", "kernel_image", "dummy_image"]
 
-# This task should be defined according to the kernel.
+# This task should be defined by extending according to the kernel.
 [tasks.run_fuzzer]
 dependencies = ["run_fuzzer_base"] # You should add this line when extending.
 script = """
