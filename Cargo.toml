@@ -9,6 +9,14 @@ debug = true
 lto = "fat"
 codegen-units = 1
 
+[lib]
+name = "lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuzzer"
+path = "src/main.rs"
+
 [features]
 fuzzer = []
 runtime = []
@@ -19,6 +27,9 @@ libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
 libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/", features = ["riscv64", "systemmode"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
+ahash = "0.8.11"
+serde = "1.0"
+enum_dispatch = "0.3.13"
 
 # You can also use pulled repo if you want to change something of the library
 # [patch."https://github.com/AFLplusplus/LibAFL/"]
