@@ -1,6 +1,7 @@
 use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
+use enum_downcast::EnumDowncast;
 
 use super::call::{Arg, Call, CallResult, ConstArg, GroupArg, ResultArg};
 use super::context::{Context, ResourceDesc};
@@ -37,7 +38,7 @@ pub trait ArgGenerator {
 #[enum_dispatch]
 pub trait ArgMutator {
     /// Mutate an existing argument for this field type
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>);
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call>;
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +54,13 @@ impl ArgGenerator for Field {
     }
 }
 
-#[enum_dispatch(ArgGenerator)]
+impl ArgMutator for Field {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        self.ty.mutate(rand, ctx, arg)
+    }
+}
+
+#[enum_dispatch(ArgGenerator, ArgMutator)]
 #[derive(Debug, Clone)]
 pub enum Type {
     IntType,
@@ -92,10 +99,35 @@ pub struct IntType {
     end: u64,
 }
 
+impl IntType {
+    fn generate_impl<R: Rand>(&self, rand: &mut R) -> u64 {
+        rand.between(self.begin.try_into().unwrap(), self.end.try_into().unwrap()) as u64
+    }
+}
+
 impl ArgGenerator for IntType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let val = rand.between(self.begin.try_into().unwrap(), self.end.try_into().unwrap());
+        let val = self.generate_impl(rand);
         (ConstArg::new(val as u64).into(), vec![])
+    }
+}
+
+impl ArgMutator for IntType {
+    fn mutate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
+
+        arg.0 = if rand.below(2) == 0 {
+            self.generate_impl(rand)
+        } else {
+            match rand.below(3) {
+                0 => arg.0.wrapping_sub(rand.below(4) as u64 + 1),
+                1 => arg.0.wrapping_add(rand.below(4) as u64 + 1),
+                2 => arg.0 ^ (1 << rand.below(64)),
+                _ => unreachable!("Invalid random value"),
+            }
+        };
+
+        vec![]
     }
 }
 
@@ -104,10 +136,34 @@ pub struct FlagType {
     values: Vec<u64>,
 }
 
+impl FlagType {
+    fn generate_impl<R: Rand>(&self, rand: &mut R) -> u64 {
+        match rand.below(5) {
+            0 => 0,
+            1 => rand.next(),
+            _ => self.values[rand.below(self.values.len())],
+        }
+    }
+}
+
 impl ArgGenerator for FlagType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let val = self.values[rand.below(self.values.len())];
+    fn generate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context) -> (Arg, Vec<Call>) {
+        let val = self.generate_impl(rand);
         (ConstArg::new(val).into(), vec![])
+    }
+}
+
+impl ArgMutator for FlagType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
+
+        loop {
+            let val = self.generate_impl(rand);
+            if arg.0 != val {
+                arg.0 = val;
+                return vec![];
+            }
+        }
     }
 }
 
@@ -137,6 +193,12 @@ impl ArgGenerator for ArrayType {
     }
 }
 
+impl ArgMutator for ArrayType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        todo!("ArrayType::mutate")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PointerType {
     elem: Box<Type>,
@@ -146,6 +208,12 @@ pub struct PointerType {
 impl ArgGenerator for PointerType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         todo!("PointerType::generate")
+    }
+}
+
+impl ArgMutator for PointerType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        todo!("PointerType::mutate")
     }
 }
 
@@ -162,6 +230,12 @@ impl ArgGenerator for StructType {
     }
 }
 
+impl ArgMutator for StructType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        todo!("StructType::mutate")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UnionType {
     fields: Vec<Field>,
@@ -171,6 +245,12 @@ impl ArgGenerator for UnionType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let field = &self.fields[rand.below(self.fields.len())];
         generate_arg(rand, ctx, field)
+    }
+}
+
+impl ArgMutator for UnionType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        todo!("UnionType::mutate")
     }
 }
 
@@ -248,5 +328,11 @@ impl ArgGenerator for ResourceType {
         // Fallback: use special values
         let val = self.desc.values[rand.below(self.desc.values.len())];
         (ResultArg::from_literal(val).into(), vec![])
+    }
+}
+
+impl ArgMutator for ResourceType {
+    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+        todo!("ResourceType::mutate")
     }
 }

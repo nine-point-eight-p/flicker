@@ -481,6 +481,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum_downcast"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0013dd8daec181ba27c6ba51878045ad769ea44082398835c6ac79dde8f67b1"
+dependencies = [
+ "enum_downcast_derive",
+]
+
+[[package]]
+name = "enum_downcast_derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70e3f500935289a65a661db7edaeb0498a25ad34c62463507ea13824564e2c27"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+]
+
+[[package]]
 name = "env_filter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1983,6 +2003,7 @@ dependencies = [
  "ahash",
  "clap",
  "enum_dispatch",
+ "enum_downcast",
  "env_logger",
  "libafl",
  "libafl_bolts",

@@ -1,11 +1,9 @@
-use std::rc::Rc;
-
-use super::call::{CallResult, CallResultId};
+use super::call::{Call, CallResult, CallResultId};
 use super::syscall::{Syscall, Type};
 
 pub struct Context {
     // Static data
-    syscalls: Vec<Rc<Syscall>>,
+    syscalls: Vec<Syscall>,
 
     // Dynamic data
     pub generating_resource: bool,
@@ -15,7 +13,6 @@ pub struct Context {
 
 impl Context {
     pub fn new(syscalls: Vec<Syscall>) -> Self {
-        let syscalls = syscalls.into_iter().map(Rc::new).collect();
         Self {
             syscalls,
             generating_resource: false,
@@ -24,7 +21,31 @@ impl Context {
         }
     }
 
-    pub fn syscalls(&self) -> &[Rc<Syscall>] {
+    pub fn from_calls(syscalls: Vec<Syscall>, calls: &[Call]) -> Self {
+        let mut results = vec![];
+        for call in calls.iter() {
+            if let Some(id) = call.result() {
+                let ty = syscalls
+                    .iter()
+                    .find(|s| s.number() == call.number())
+                    .unwrap()
+                    .return_type()
+                    .unwrap()
+                    .clone();
+                results.push(CallResult::new(ty, id));
+            }
+        }
+        let result_allocator = IndexAllocator::from_index(results.len());
+
+        Self {
+            syscalls,
+            generating_resource: false,
+            results,
+            result_allocator,
+        }
+    }
+
+    pub fn syscalls(&self) -> &[Syscall] {
         &self.syscalls
     }
 
@@ -56,6 +77,10 @@ struct IndexAllocator(usize);
 impl IndexAllocator {
     pub fn new() -> Self {
         Self(0)
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        Self(index)
     }
 
     pub fn alloc(&mut self) -> usize {

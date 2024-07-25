@@ -30,6 +30,7 @@ env_logger = "0.11.3"
 ahash = "0.8.11"
 serde = "1.0"
 enum_dispatch = "0.3.13"
+enum_downcast = { version = "0.2.0", features = ["derive"] }
 
 # You can also use pulled repo if you want to change something of the library
 # [patch."https://github.com/AFLplusplus/LibAFL/"]
