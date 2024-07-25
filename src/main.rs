@@ -1,26 +1,18 @@
 #[cfg(target_os = "linux")]
 use env_logger;
 
-#[cfg(all(target_os = "linux", feature = "fuzzer"))]
+#[cfg(target_os = "linux")]
 mod fuzzer;
 
-#[cfg(all(target_os = "linux", feature = "runtime"))]
-mod runner;
-
 #[cfg(target_os = "linux")]
-mod parse;
+mod option;
 
 #[cfg(target_os = "linux")]
 pub fn main() {
-    let args = parse::parse();
+    let options = option::parse();
 
     env_logger::init();
-
-    #[cfg(feature = "fuzzer")]
-    fuzzer::fuzz(args);
-
-    #[cfg(feature = "runtime")]
-    runner::run(args);
+    fuzzer::fuzz(options);
 }
 
 #[cfg(not(target_os = "linux"))]

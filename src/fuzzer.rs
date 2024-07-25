@@ -37,10 +37,10 @@ use libafl_qemu::{
 
 // use libafl_qemu::QemuSnapshotBuilder; for normal qemu snapshot
 
-use crate::parse::Args;
+use crate::option::FuzzerOption;
 
-pub fn fuzz(args: Args) {
-    let Args {
+pub fn fuzz(opt: FuzzerOption) {
+    let FuzzerOption {
         timeout,
         broker_port,
         cores,
@@ -48,7 +48,7 @@ pub fn fuzz(args: Args) {
         gen_corpus_dir,
         objective_dir,
         mut run_args,
-    } = args;
+    } = opt;
     let timeout = Duration::from_secs(timeout);
     let cores = Cores::from_cmdline(&cores).unwrap();
     let init_corpus_dir = PathBuf::from(init_corpus_dir);

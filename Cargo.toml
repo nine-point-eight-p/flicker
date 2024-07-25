@@ -17,10 +17,6 @@ path = "src/lib.rs"
 name = "fuzzer"
 path = "src/main.rs"
 
-[features]
-fuzzer = []
-runtime = []
-
 [dependencies]
 libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
 libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
@@ -31,6 +27,8 @@ ahash = "0.8.11"
 serde = "1.0"
 enum_dispatch = "0.3.13"
 enum_downcast = { version = "0.2.0", features = ["derive"] }
+syzlang-parser = "0.1.4"
+log = "0.4.22"
 
 # You can also use pulled repo if you want to change something of the library
 # [patch."https://github.com/AFLplusplus/LibAFL/"]

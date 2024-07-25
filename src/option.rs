@@ -2,7 +2,7 @@ use clap::Parser;
 
 #[derive(Parser)]
 #[clap(trailing_var_arg = true)]
-pub struct Args {
+pub struct FuzzerOption {
     #[arg(short, long, default_value_t = 3)]
     pub timeout: u64,
     #[arg(short, long, default_value_t = 1337)]
@@ -19,6 +19,6 @@ pub struct Args {
     pub run_args: Vec<String>,
 }
 
-pub fn parse() -> Args {
-    Args::parse()
+pub fn parse() -> FuzzerOption {
+    FuzzerOption::parse()
 }
