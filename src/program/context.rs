@@ -1,3 +1,5 @@
+use syzlang_parser::parser::Resource;
+
 use super::call::{Call, CallResult, CallResultId};
 use super::syscall::{Syscall, Type};
 
@@ -59,17 +61,6 @@ impl Context {
         self.results.push(result);
         &self.results[id]
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ResourceDesc {
-    pub name: String,
-    pub values: Vec<u64>,
-}
-
-pub struct FlagDesc {
-    pub name: String,
-    pub values: Vec<u64>,
 }
 
 struct IndexAllocator(usize);
