@@ -15,9 +15,12 @@ use libafl_bolts::{
     HasLen, Named,
 };
 
-use crate::input::SyscallInput;
 use crate::program::{context::Context, syscall::Syscall};
 use crate::{generator::generate_call, program::syscall::ArgMutator};
+use crate::{
+    input::SyscallInput,
+    program::metadata::{self, SyscallMetadata},
+};
 
 pub struct SyscallSpliceMutator;
 
@@ -55,7 +58,7 @@ impl Named for SyscallSpliceMutator {
 }
 
 pub struct SyscallInsertMutator {
-    syscalls: Vec<Syscall>,
+    metadata: SyscallMetadata,
 }
 
 impl<S> Mutator<SyscallInput, S> for SyscallInsertMutator
@@ -72,11 +75,12 @@ where
         let pos = state.rand_mut().below(input.len());
 
         // Create context at the insertion point
-        let mut context = Context::from_calls(self.syscalls.clone(), &input.calls()[..pos]);
+        let mut context = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
         let result_size = context.results().len();
 
         // Choose a random syscall to insert
-        let syscall = state.rand_mut().choose(self.syscalls.iter()).unwrap();
+        let idx = state.rand_mut().below(self.metadata.syscalls().len());
+        let syscall = &self.metadata.syscalls()[idx];
 
         // Generate syscall
         let new_calls = generate_call(state.rand_mut(), &mut context, syscall);
@@ -102,7 +106,7 @@ impl Named for SyscallInsertMutator {
 }
 
 pub struct SyscallRandMutator {
-    syscalls: Vec<Syscall>,
+    metadata: SyscallMetadata,
 }
 
 impl<S> Mutator<SyscallInput, S> for SyscallRandMutator
@@ -117,10 +121,11 @@ where
 
         // Choose a random call to mutate
         let pos = state.rand_mut().below(input.len());
-        let mut ctx = Context::from_calls(self.syscalls.clone(), &input.calls()[..pos]);
+        let mut ctx = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
         let call = &mut input.calls_mut()[pos];
         let syscall = self
-            .syscalls
+            .metadata
+            .syscalls()
             .iter()
             .find(|s| s.number() == call.number())
             .expect("Syscall not found");
@@ -170,7 +175,7 @@ impl Named for SyscallRemoveMutator {
 }
 
 pub fn syscall_mutations(
-    syscalls: Vec<Syscall>,
+    metadata: SyscallMetadata,
 ) -> tuple_list_type!(
     SyscallSpliceMutator,
     SyscallInsertMutator,
@@ -180,9 +185,9 @@ pub fn syscall_mutations(
     tuple_list!(
         SyscallSpliceMutator,
         SyscallInsertMutator {
-            syscalls: syscalls.clone()
+            metadata: metadata.clone()
         },
-        SyscallRandMutator { syscalls },
+        SyscallRandMutator { metadata },
         SyscallRemoveMutator
     )
 }

@@ -1,6 +1,6 @@
 [env]
 PROFILE = { value = "release", condition = { env_not_set = ["PROFILE"] } }
-TARGET_NAME = "${CARGO_MAKE_CRATE_NAME}"
+TARGET_NAME = "fuzzer"
 TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
 TARGET_DEFINE = "TARGET_SYNC_EXIT"
 KERNEL_NAME = "" # Should be defined by extending according to the kernel
@@ -38,7 +38,6 @@ qemu-img create -f qcow2 ${TARGET_DIR}/dummy.qcow2 32M
 command = "cargo"
 args = [
     "build",
-    "--features", "fuzzer",
     "--profile", "${PROFILE}",
     "--target-dir", "${TARGET_DIR}",
     "-v",

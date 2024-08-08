@@ -1,5 +1,5 @@
-mod generator;
-mod input;
-mod mutator;
-mod parser;
-mod program;
+pub mod generator;
+pub mod input;
+pub mod mutator;
+pub mod parser;
+pub mod program;

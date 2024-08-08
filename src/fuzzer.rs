@@ -1,6 +1,7 @@
 //! A fuzzer using qemu in systemmode for binary-only coverage of kernels
 //!
 use core::{ptr::addr_of_mut, time::Duration};
+use std::path::Path;
 use std::{env, path::PathBuf};
 
 use libafl::{
@@ -37,28 +38,44 @@ use libafl_qemu::{
 
 // use libafl_qemu::QemuSnapshotBuilder; for normal qemu snapshot
 
+use lib::{
+    generator::SyscallGenerator,
+    input::SyscallInput,
+    mutator::syscall_mutations,
+    parser::parse,
+    program::{context::Context, metadata::SyscallMetadata},
+};
+
 use crate::option::FuzzerOption;
 
 pub fn fuzz(opt: FuzzerOption) {
     let FuzzerOption {
         timeout,
-        broker_port,
+        port: broker_port,
         cores,
-        init_corpus_dir,
-        gen_corpus_dir,
-        objective_dir,
+        init_corpus,
+        gen_corpus,
+        crash,
+        desc,
+        r#const,
         mut run_args,
     } = opt;
+
     let timeout = Duration::from_secs(timeout);
     let cores = Cores::from_cmdline(&cores).unwrap();
-    let init_corpus_dir = PathBuf::from(init_corpus_dir);
-    let gen_corpus_dir = PathBuf::from(gen_corpus_dir);
-    let objective_dir = PathBuf::from(objective_dir);
+    let init_corpus_dir = PathBuf::from(init_corpus);
+    let gen_corpus_dir = PathBuf::from(gen_corpus);
+    let crash_dir = PathBuf::from(crash);
+    let desc_file = PathBuf::from(desc);
+    let const_file = PathBuf::from(r#const);
+
     // Usually qemu is initialized with `env::args().collect()`,
     // where the first argument is the path of the executable.
     // Since we directly pass arguments into the fuzzer, we add
     // an empty string as a placeholder.
     run_args.insert(0, String::new());
+
+    let metadata = SyscallMetadata::from_parsed(parse(&desc_file, &const_file));
 
     let mut run_client = |state: Option<_>, mut mgr, _core_id| {
         // Initialize QEMU
@@ -79,7 +96,7 @@ pub fn fuzz(opt: FuzzerOption) {
 
         // The wrapped harness function, calling out to the LLVM-style harness
         let mut harness =
-            |input: &BytesInput, qemu_executor_state: &mut QemuExecutorState<_, _>| unsafe {
+            |input: &SyscallInput, qemu_executor_state: &mut QemuExecutorState<_, _>| unsafe {
                 emu.run(input, qemu_executor_state)
                     .unwrap()
                     .try_into()
@@ -120,7 +137,7 @@ pub fn fuzz(opt: FuzzerOption) {
                 InMemoryOnDiskCorpus::new(gen_corpus_dir.clone()).unwrap(),
                 // Corpus in which we store solutions (crashes in this example),
                 // on disk so the user can get them after stopping the fuzzer
-                OnDiskCorpus::new(objective_dir.clone()).unwrap(),
+                OnDiskCorpus::new(crash_dir.clone()).unwrap(),
                 // States of the feedbacks.
                 // The feedbacks can report the data that should persist in the State.
                 &mut feedback,
@@ -143,7 +160,7 @@ pub fn fuzz(opt: FuzzerOption) {
         );
 
         // Setup an havoc mutator with a mutational stage
-        let mutator = StdScheduledMutator::new(havoc_mutations());
+        let mutator = StdScheduledMutator::new(syscall_mutations(metadata.clone()));
         let calibration_feedback = MaxMapFeedback::new(&edges_observer);
         let mut stages = tuple_list!(
             StdMutationalStage::new(mutator),
@@ -175,7 +192,8 @@ pub fn fuzz(opt: FuzzerOption) {
                 println!("We imported {} inputs from disk.", state.corpus().count());
             } else {
                 println!("Failed to import initial inputs, try to generate");
-                let mut generator = RandBytesGenerator::new(64);
+                let context = Context::new(metadata.clone());
+                let mut generator = SyscallGenerator::new(64, context);
                 state
                     .generate_initial_inputs(
                         &mut fuzzer,

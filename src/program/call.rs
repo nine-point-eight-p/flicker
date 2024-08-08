@@ -2,9 +2,20 @@ use std::rc::Rc;
 
 use enum_dispatch::enum_dispatch;
 use enum_downcast::EnumDowncast;
+use postcard::to_allocvec;
 use serde::{Deserialize, Serialize};
 
 use super::syscall::{Direction, Syscall, Type};
+
+/// Serialize to testcase bytes for execution on the target.
+/// Used as a helper for [`libafl::inputs::HasTargetBytes`].
+/// Currently should be implemented with [`postcard`] for harness
+/// to deserialize the bytes.
+#[enum_dispatch]
+pub trait ToExecBytes {
+    /// Byte representation of this object.
+    fn to_exec_bytes(&self) -> Vec<u8>;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Call {
@@ -39,6 +50,14 @@ impl Call {
     }
 }
 
+impl ToExecBytes for Call {
+    fn to_exec_bytes(&self) -> Vec<u8> {
+        let mut bytes = to_allocvec(&self.nr).unwrap();
+        bytes.extend(self.args.iter().flat_map(|arg| arg.to_exec_bytes()));
+        bytes
+    }
+}
+
 #[derive(Debug)]
 pub struct CallResult {
     ty: Type,
@@ -61,15 +80,7 @@ impl CallResult {
 
 pub type CallResultId = usize;
 
-/// Can be represented with a slice of bytes.
-/// Used as a helper for [`libafl::inputs::HasTargetBytes`].
-#[enum_dispatch]
-pub trait HasBytes {
-    /// Byte representation of this object.
-    fn bytes(&self) -> Vec<u8>;
-}
-
-#[enum_dispatch(HasBytes)]
+#[enum_dispatch(ToExecBytes)]
 #[derive(Debug, Clone, Serialize, Deserialize, EnumDowncast)]
 pub enum Arg {
     ConstArg,
@@ -87,9 +98,9 @@ impl ConstArg {
     }
 }
 
-impl HasBytes for ConstArg {
-    fn bytes(&self) -> Vec<u8> {
-        self.0.to_le_bytes().to_vec()
+impl ToExecBytes for ConstArg {
+    fn to_exec_bytes(&self) -> Vec<u8> {
+        to_allocvec(&self.0).unwrap()
     }
 }
 
@@ -99,15 +110,15 @@ pub struct PointerArg {
     res: Box<Arg>,
 }
 
-impl HasBytes for PointerArg {
-    fn bytes(&self) -> Vec<u8> {
-        self.addr.to_le_bytes().to_vec()
-    }
-}
-
 impl PointerArg {
     pub fn new(addr: u64, res: Box<Arg>) -> Self {
         Self { addr, res }
+    }
+}
+
+impl ToExecBytes for PointerArg {
+    fn to_exec_bytes(&self) -> Vec<u8> {
+        to_allocvec(&self.addr).unwrap()
     }
 }
 
@@ -120,9 +131,9 @@ impl GroupArg {
     }
 }
 
-impl HasBytes for GroupArg {
-    fn bytes(&self) -> Vec<u8> {
-        self.0.iter().flat_map(|arg| arg.bytes()).collect()
+impl ToExecBytes for GroupArg {
+    fn to_exec_bytes(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|arg| arg.to_exec_bytes()).collect()
     }
 }
 
@@ -145,11 +156,11 @@ impl ResultArg {
     }
 }
 
-impl HasBytes for ResultArg {
-    fn bytes(&self) -> Vec<u8> {
+impl ToExecBytes for ResultArg {
+    fn to_exec_bytes(&self) -> Vec<u8> {
         match &self.0 {
-            ResultArgInner::Ref(id) => id.to_le_bytes().to_vec(),
-            ResultArgInner::Literal(literal) => literal.to_le_bytes().to_vec(),
+            ResultArgInner::Ref(id) => to_allocvec(id).unwrap(),
+            ResultArgInner::Literal(literal) => to_allocvec(literal).unwrap(),
         }
     }
 }

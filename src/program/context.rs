@@ -1,11 +1,12 @@
-use syzlang_parser::parser::Resource;
+use syzlang_parser::parser::{Arch, Parsed};
 
 use super::call::{Call, CallResult, CallResultId};
+use super::metadata::SyscallMetadata;
 use super::syscall::{Syscall, Type};
 
 pub struct Context {
     // Static data
-    syscalls: Vec<Syscall>,
+    metadata: SyscallMetadata,
 
     // Dynamic data
     pub generating_resource: bool,
@@ -14,20 +15,21 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(syscalls: Vec<Syscall>) -> Self {
+    pub fn new(metadata: SyscallMetadata) -> Self {
         Self {
-            syscalls,
+            metadata,
             generating_resource: false,
             results: vec![],
             result_allocator: IndexAllocator::new(),
         }
     }
 
-    pub fn from_calls(syscalls: Vec<Syscall>, calls: &[Call]) -> Self {
+    pub fn with_calls(metadata: SyscallMetadata, calls: &[Call]) -> Self {
         let mut results = vec![];
         for call in calls.iter() {
             if let Some(id) = call.result() {
-                let ty = syscalls
+                let ty = metadata
+                    .syscalls()
                     .iter()
                     .find(|s| s.number() == call.number())
                     .unwrap()
@@ -40,7 +42,7 @@ impl Context {
         let result_allocator = IndexAllocator::from_index(results.len());
 
         Self {
-            syscalls,
+            metadata,
             generating_resource: false,
             results,
             result_allocator,
@@ -48,7 +50,7 @@ impl Context {
     }
 
     pub fn syscalls(&self) -> &[Syscall] {
-        &self.syscalls
+        self.metadata.syscalls()
     }
 
     pub fn results(&self) -> &[CallResult] {
