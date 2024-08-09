@@ -1,9 +1,6 @@
 use std::path::Path;
 
-use syzlang_parser::{
-    parser::{Consts, Parsed, Statement},
-    token::Token,
-};
+use syzlang_parser::parser::{Consts, Parsed, Statement};
 
 pub fn parse(desc_path: &Path, const_path: &Path) -> Parsed {
     let stmts = Statement::from_file(desc_path).unwrap();

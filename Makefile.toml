@@ -38,6 +38,7 @@ qemu-img create -f qcow2 ${TARGET_DIR}/dummy.qcow2 32M
 command = "cargo"
 args = [
     "build",
+    "--features", "riscv64",
     "--profile", "${PROFILE}",
     "--target-dir", "${TARGET_DIR}",
     "-v",

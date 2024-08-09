@@ -1,7 +1,6 @@
 //! A fuzzer using qemu in systemmode for binary-only coverage of kernels
 //!
 use core::{ptr::addr_of_mut, time::Duration};
-use std::path::Path;
 use std::{env, path::PathBuf};
 
 use libafl::{
@@ -10,10 +9,8 @@ use libafl::{
     feedback_or, feedback_or_fast,
     feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
-    generators::RandBytesGenerator,
-    inputs::BytesInput,
     monitors::MultiMonitor,
-    mutators::scheduled::{havoc_mutations, StdScheduledMutator},
+    mutators::scheduled::StdScheduledMutator,
     observers::{CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver},
     schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler},
     stages::{CalibrationStage, StdMutationalStage},
@@ -38,7 +35,7 @@ use libafl_qemu::{
 
 // use libafl_qemu::QemuSnapshotBuilder; for normal qemu snapshot
 
-use lib::{
+use flicker::{
     generator::SyscallGenerator,
     input::SyscallInput,
     mutator::syscall_mutations,
