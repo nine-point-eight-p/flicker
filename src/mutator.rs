@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::min;
 
 use libafl::{
     corpus::Corpus,
@@ -15,12 +14,9 @@ use libafl_bolts::{
     HasLen, Named,
 };
 
-use crate::program::{context::Context, syscall::Syscall};
+use crate::program::context::Context;
 use crate::{generator::generate_call, program::syscall::ArgMutator};
-use crate::{
-    input::SyscallInput,
-    program::metadata::{self, SyscallMetadata},
-};
+use crate::{input::SyscallInput, program::metadata::SyscallMetadata};
 
 pub struct SyscallSpliceMutator;
 
@@ -40,11 +36,10 @@ where
 
         // Get the calls from the corpus entry
         let other = state.corpus().get(id)?.borrow();
-        let other = other.input().as_ref().unwrap();
+        let other = other.input().as_ref().cloned().unwrap();
 
         // Replace input calls after the position with the calls from the corpus entry
-        input.calls_mut().truncate(pos);
-        input.calls_mut().extend_from_slice(other.calls());
+        input.splice(pos, other.take().into_iter());
 
         Ok(MutationResult::Mutated)
     }
@@ -76,7 +71,6 @@ where
 
         // Create context at the insertion point
         let mut context = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
-        let result_size = context.results().len();
 
         // Choose a random syscall to insert
         let idx = state.rand_mut().below(self.metadata.syscalls().len());
@@ -84,15 +78,9 @@ where
 
         // Generate syscall
         let new_calls = generate_call(state.rand_mut(), &mut context, syscall);
-        let offset = context.results().len() - result_size;
-
-        // Add offset to the results after the insertion point
-        input.calls_mut()[pos..].iter_mut().for_each(|call| {
-            call.result_mut().map(|res| *res += offset);
-        });
 
         // Insert new calls
-        input.calls_mut().splice(pos..pos, new_calls);
+        input.insert(pos, new_calls.into_iter());
 
         Ok(MutationResult::Mutated)
     }
@@ -122,12 +110,10 @@ where
         // Choose a random call to mutate
         let pos = state.rand_mut().below(input.len());
         let mut ctx = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
-        let call = &mut input.calls_mut()[pos];
+        let call = input.get_mut(pos);
         let syscall = self
             .metadata
-            .syscalls()
-            .iter()
-            .find(|s| s.number() == call.number())
+            .find_number(call.number())
             .expect("Syscall not found");
 
         // Choose a random argument to mutate
@@ -147,7 +133,9 @@ impl Named for SyscallRandMutator {
     }
 }
 
-pub struct SyscallRemoveMutator;
+pub struct SyscallRemoveMutator {
+    metadata: SyscallMetadata,
+}
 
 impl<S> Mutator<SyscallInput, S> for SyscallRemoveMutator
 where
@@ -160,8 +148,7 @@ where
         }
 
         let pos = state.rand_mut().below(input.len());
-        input.calls_mut().remove(pos);
-        // TODO: Check if removed syscall is a resource generator
+        input.remove(pos, &self.metadata);
 
         Ok(MutationResult::Mutated)
     }
@@ -187,7 +174,9 @@ pub fn syscall_mutations(
         SyscallInsertMutator {
             metadata: metadata.clone()
         },
-        SyscallRandMutator { metadata },
-        SyscallRemoveMutator
+        SyscallRandMutator {
+            metadata: metadata.clone()
+        },
+        SyscallRemoveMutator { metadata },
     )
 }

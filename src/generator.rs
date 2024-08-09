@@ -56,8 +56,7 @@ pub fn generate_call<R: Rand>(rand: &mut R, ctx: &mut Context, syscall: &Syscall
     let id = syscall
         .return_type()
         .filter(|ty| ty.is_resource())
-        .map(|ty| ctx.add_result(ty))
-        .map(|res| res.id());
+        .map(|ty| ctx.add_result(ty));
     let new_call = Call::new(syscall.number(), args, id);
     calls.push(new_call);
     calls

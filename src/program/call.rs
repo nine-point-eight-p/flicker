@@ -1,11 +1,8 @@
-use std::rc::Rc;
-
 use enum_dispatch::enum_dispatch;
 use enum_downcast::EnumDowncast;
 use postcard::to_allocvec;
 use serde::{Deserialize, Serialize};
-
-use super::syscall::{Direction, Syscall, Type};
+use uuid::Uuid;
 
 /// Serialize to testcase bytes for execution on the target.
 /// Used as a helper for [`libafl::inputs::HasTargetBytes`].
@@ -21,12 +18,12 @@ pub trait ToExecBytes {
 pub struct Call {
     nr: u32,
     args: Vec<Arg>,
-    res: Option<CallResultId>,
+    result: Option<Uuid>,
 }
 
 impl Call {
-    pub fn new(nr: u32, args: Vec<Arg>, res: Option<CallResultId>) -> Self {
-        Self { nr, args, res }
+    pub fn new(nr: u32, args: Vec<Arg>, result: Option<Uuid>) -> Self {
+        Self { nr, args, result }
     }
 
     pub fn number(&self) -> u32 {
@@ -41,12 +38,8 @@ impl Call {
         &mut self.args
     }
 
-    pub fn result(&self) -> Option<CallResultId> {
-        self.res
-    }
-
-    pub fn result_mut(&mut self) -> Option<&mut CallResultId> {
-        self.res.as_mut()
+    pub fn result(&self) -> Option<Uuid> {
+        self.result
     }
 }
 
@@ -54,31 +47,12 @@ impl ToExecBytes for Call {
     fn to_exec_bytes(&self) -> Vec<u8> {
         let mut bytes = to_allocvec(&self.nr).unwrap();
         bytes.extend(self.args.iter().flat_map(|arg| arg.to_exec_bytes()));
+        if let Some(id) = &self.result {
+            bytes.extend(to_allocvec(id).unwrap());
+        }
         bytes
     }
 }
-
-#[derive(Debug)]
-pub struct CallResult {
-    ty: Type,
-    id: CallResultId,
-}
-
-impl CallResult {
-    pub fn new(ty: Type, id: CallResultId) -> Self {
-        Self { ty, id }
-    }
-
-    pub fn ty(&self) -> &Type {
-        &self.ty
-    }
-
-    pub fn id(&self) -> CallResultId {
-        self.id
-    }
-}
-
-pub type CallResultId = usize;
 
 #[enum_dispatch(ToExecBytes)]
 #[derive(Debug, Clone, Serialize, Deserialize, EnumDowncast)]
@@ -87,6 +61,22 @@ pub enum Arg {
     PointerArg,
     GroupArg,
     ResultArg,
+}
+
+impl Arg {
+    pub fn for_each_subarg<F>(&self, mut f: F)
+    where
+        F: FnMut(&Arg),
+    {
+        match self {
+            Arg::GroupArg(group) => {
+                for arg in group.0.iter() {
+                    arg.for_each_subarg(&mut f);
+                }
+            }
+            _ => f(self),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,30 +127,39 @@ impl ToExecBytes for GroupArg {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResultArg(ResultArgInner);
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct ResultArg {
+//     value: ResultArgInner,
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum ResultArgInner {
-    Ref(CallResultId),
+pub enum ResultArg {
+    Ref(Uuid),
     Literal(u64),
 }
 
 impl ResultArg {
-    pub fn from_result(id: CallResultId) -> Self {
-        Self(ResultArgInner::Ref(id))
+    pub fn from_result(id: Uuid) -> Self {
+        Self::Ref(id)
     }
 
     pub fn from_literal(literal: u64) -> Self {
-        Self(ResultArgInner::Literal(literal))
+        Self::Literal(literal)
+    }
+
+    pub fn uses_result(&self, id: Uuid) -> bool {
+        match self {
+            ResultArg::Ref(other_id) => id == *other_id,
+            _ => false,
+        }
     }
 }
 
 impl ToExecBytes for ResultArg {
     fn to_exec_bytes(&self) -> Vec<u8> {
-        match &self.0 {
-            ResultArgInner::Ref(id) => to_allocvec(id).unwrap(),
-            ResultArgInner::Literal(literal) => to_allocvec(literal).unwrap(),
+        match &self {
+            ResultArg::Ref(id) => to_allocvec(id).unwrap(),
+            ResultArg::Literal(literal) => to_allocvec(literal).unwrap(),
         }
     }
 }

@@ -1,16 +1,19 @@
+mod generation;
+mod mutation;
+
 use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
-use enum_downcast::EnumDowncast;
 use syzlang_parser::parser::{
-    ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType, Identifier, Parsed, Resource, Struct, StructAttr, Union, Value
+    ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType, Identifier,
+    Parsed, Resource, Struct, Union, Value,
 };
 
-use log::warn;
-
-use super::call::{Arg, Call, CallResult, ConstArg, GroupArg, ResultArg};
+use super::call::{Arg, Call};
 use super::context::Context;
-use crate::generator::{generate_arg, generate_args, generate_call};
+
+pub use generation::ArgGenerator;
+pub use mutation::ArgMutator;
 
 #[derive(Debug, Clone)]
 pub struct Syscall {
@@ -48,18 +51,6 @@ impl Syscall {
     }
 }
 
-#[enum_dispatch]
-pub trait ArgGenerator {
-    /// Generate a new argument for this field type
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>);
-}
-
-#[enum_dispatch]
-pub trait ArgMutator {
-    /// Mutate an existing argument for this field type
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call>;
-}
-
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
@@ -74,18 +65,6 @@ impl Field {
             ty: Type::from_argument(argument, ctx).unwrap(),
             dir: argument.direction().into(),
         }
-    }
-}
-
-impl ArgGenerator for Field {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        self.ty.generate(rand, ctx)
-    }
-}
-
-impl ArgMutator for Field {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        self.ty.mutate(rand, ctx, arg)
     }
 }
 
@@ -185,85 +164,29 @@ impl IntType {
         };
         Self { begin: 0, end: max }
     }
-
-    fn generate_impl<R: Rand>(&self, rand: &mut R) -> u64 {
-        rand.between(self.begin.try_into().unwrap(), self.end.try_into().unwrap()) as u64
-    }
-}
-
-impl ArgGenerator for IntType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let val = self.generate_impl(rand);
-        (ConstArg::new(val as u64).into(), vec![])
-    }
-}
-
-impl ArgMutator for IntType {
-    fn mutate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
-
-        arg.0 = if rand.below(2) == 0 {
-            self.generate_impl(rand)
-        } else {
-            match rand.below(3) {
-                0 => arg.0.wrapping_sub(rand.below(4) as u64 + 1),
-                1 => arg.0.wrapping_add(rand.below(4) as u64 + 1),
-                2 => arg.0 ^ (1 << rand.below(64)),
-                _ => unreachable!("Invalid random value"),
-            }
-        };
-
-        vec![]
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct FlagType {
     values: Vec<u64>,
+    is_bitmask: bool,
 }
 
 impl FlagType {
     fn from_flag(flag: &Flag, ctx: &Parsed) -> Self {
-        let values = flag
+        let mut values: Vec<u64> = flag
             .args()
             .map(|arg| value_to_u64_flatten(arg, ctx).unwrap())
             .collect();
-        Self { values }
+        values.sort();
+        let is_bitmask = is_bitmask(&values);
+        Self { values, is_bitmask }
     }
 
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
         let flag_name = find_ident(&argument.opts, ctx).expect("No flag name for flag type");
         let flag = ctx.get_flag(flag_name).unwrap();
         Self::from_flag(flag, ctx)
-    }
-
-    fn generate_impl<R: Rand>(&self, rand: &mut R) -> u64 {
-        match rand.below(5) {
-            0 => 0,
-            1 => rand.next(),
-            _ => self.values[rand.below(self.values.len())],
-        }
-    }
-}
-
-impl ArgGenerator for FlagType {
-    fn generate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let val = self.generate_impl(rand);
-        (ConstArg::new(val).into(), vec![])
-    }
-}
-
-impl ArgMutator for FlagType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
-
-        loop {
-            let val = self.generate_impl(rand);
-            if arg.0 != val {
-                arg.0 = val;
-                return vec![];
-            }
-        }
     }
 }
 
@@ -290,30 +213,6 @@ impl ArrayType {
     }
 }
 
-impl ArgGenerator for ArrayType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let size = rand.between(self.begin.try_into().unwrap(), self.end.try_into().unwrap());
-        assert!(size > 0);
-        let elem_field = Field {
-            name: "array_elem".to_string(), // doesn't matter
-            ty: self.elem.as_ref().clone(),
-            dir: self.dir,
-        };
-        let (args, calls): (Vec<Arg>, Vec<Vec<Call>>) = (0..size)
-            .map(|_| generate_arg(rand, ctx, &elem_field))
-            .unzip();
-        let arg = GroupArg::new(args).into();
-        let calls = calls.into_iter().flatten().collect();
-        (arg, calls)
-    }
-}
-
-impl ArgMutator for ArrayType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("ArrayType::mutate")
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PointerType {
     elem: Box<Type>,
@@ -326,18 +225,6 @@ impl PointerType {
         let elem = Box::new(Type::from_argument(subarg, ctx).unwrap());
         let dir = find_dir(&argument.opts);
         Self { elem, dir }
-    }
-}
-
-impl ArgGenerator for PointerType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        todo!("PointerType::generate")
-    }
-}
-
-impl ArgMutator for PointerType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("PointerType::mutate")
     }
 }
 
@@ -357,20 +244,6 @@ impl StructType {
     }
 }
 
-impl ArgGenerator for StructType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let (args, calls) = generate_args(rand, ctx, &self.fields);
-        let arg = GroupArg::new(args).into();
-        (arg, calls)
-    }
-}
-
-impl ArgMutator for StructType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("StructType::mutate")
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct UnionType {
     fields: Vec<Field>,
@@ -387,19 +260,6 @@ impl UnionType {
     }
 }
 
-impl ArgGenerator for UnionType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let field = &self.fields[rand.below(self.fields.len())];
-        generate_arg(rand, ctx, field)
-    }
-}
-
-impl ArgMutator for UnionType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("UnionType::mutate")
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ResourceType {
     name: String,
@@ -408,85 +268,19 @@ pub struct ResourceType {
 
 impl ResourceType {
     pub fn from_resource(resource: &Resource, ctx: &Parsed) -> Self {
+        let values: Vec<u64> = resource
+            .consts
+            .iter()
+            .map(|val| value_to_u64_flatten(val, ctx).unwrap())
+            .collect();
+        assert!(
+            !values.is_empty(),
+            "Resource type has to provide at least one value as default"
+        );
         Self {
             name: resource.name.name.clone(),
-            values: resource
-                .consts
-                .iter()
-                .map(|val| value_to_u64_flatten(val, ctx).unwrap())
-                .collect(),
+            values,
         }
-    }
-
-    /// Create a new resource by generating a syscall
-    fn create_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        // Find a syscall that creates this resource
-        let resource_creators = ctx
-            .syscalls()
-            .iter()
-            .filter(|s| {
-                s.return_type()
-                    .is_some_and(|ty| ty.is_compatible_resource(&self.name))
-            })
-            .map(|s| s.clone());
-        let syscall = rand
-            .choose(resource_creators)
-            .expect("No syscall to create resource");
-
-        // Generate the syscall and the argument
-        let calls = generate_call(rand, ctx, &syscall);
-        let arg = ResultArg::from_result(calls.last().unwrap().result().unwrap()).into();
-
-        (arg, calls)
-    }
-
-    /// Create a resource by loading the initializations from the corpus
-    fn load_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> Arg {
-        todo!()
-    }
-
-    /// Use an existing resource
-    fn use_existing_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> Option<Arg> {
-        // Find compatible resources
-        let results = ctx
-            .results()
-            .iter()
-            .filter(|res| res.ty().is_compatible_resource(&self.name));
-        // Randomly choose one
-        rand.choose(results)
-            .map(|res| ResultArg::from_result(res.id()).into())
-    }
-}
-
-impl ArgGenerator for ResourceType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        // Check if we can recurse
-        let can_recurse = if ctx.generating_resource {
-            false
-        } else {
-            ctx.generating_resource = true;
-            true
-        };
-
-        // Use an existing resource with a high probability
-        if can_recurse && rand.coinflip(0.8) || !can_recurse && rand.coinflip(0.95) {
-            if let Some(arg) = self.use_existing_resource(rand, ctx) {
-                return (arg, vec![]);
-            }
-        }
-        // Create a new resource if we can recurse
-        if can_recurse && rand.coinflip(0.8) {
-            return self.create_resource(rand, ctx);
-        }
-        // Fallback: use special values
-        let val = self.values[rand.below(self.values.len())];
-        (ResultArg::from_literal(val).into(), vec![])
-    }
-}
-
-impl ArgMutator for ResourceType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("ResourceType::mutate")
     }
 }
 
@@ -501,22 +295,10 @@ fn find_dir(arg_opts: &[ArgOpt]) -> Direction {
 }
 
 fn find_ident<'a>(arg_opts: &'a [ArgOpt], ctx: &'a Parsed) -> Option<&'a Identifier> {
-    arg_opts
-        .iter()
-        .find_map(|opt| match opt {
-            ArgOpt::Ident(ident) => Some(ident),
-            _ => None,
-        })
-}
-
-fn find_values(arg_opts: &[ArgOpt], ctx: &Parsed) -> Vec<u64> {
-    arg_opts
-        .iter()
-        .filter_map(|opt| match opt {
-            ArgOpt::Value(value) => Some(value_to_u64_flatten(value, ctx).unwrap()),
-            _ => None,
-        })
-        .collect()
+    arg_opts.iter().find_map(|opt| match opt {
+        ArgOpt::Ident(ident) => Some(ident),
+        _ => None,
+    })
 }
 
 fn find_range(arg_opts: &[ArgOpt]) -> Option<(u64, u64)> {
@@ -550,4 +332,21 @@ fn value_to_u64_flatten(value: &Value, ctx: &Parsed) -> Option<u64> {
             .and_then(|c| c.as_uint().ok()),
         _ => None,
     }
+}
+
+/// Check if the values are a bitmask (i.e. no two values have the same bit set).
+/// Assume the values are sorted.
+fn is_bitmask(values: &[u64]) -> bool {
+    if values.is_empty() || values[0] == 0 {
+        // 0 can't be part of a bitmask
+        return false;
+    }
+    let mut combined = 0;
+    for v in values {
+        if v & combined != 0 {
+            return false;
+        }
+        combined |= v;
+    }
+    true
 }

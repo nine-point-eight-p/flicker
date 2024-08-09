@@ -1,4 +1,4 @@
-pub mod call;
+pub(crate) mod call;
 pub mod context;
 pub mod metadata;
-pub mod syscall;
+pub(crate) mod syscall;

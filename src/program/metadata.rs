@@ -28,6 +28,10 @@ impl SyscallMetadata {
     pub fn syscalls(&self) -> &[Syscall] {
         &self.0
     }
+
+    pub fn find_number(&self, nr: u32) -> Option<&Syscall> {
+        self.0.iter().find(|s| s.number() == nr)
+    }
 }
 
 fn find_sysno_with_default(parsed: &Parsed, name: &str) -> u32 {
