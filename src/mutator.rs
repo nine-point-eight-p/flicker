@@ -15,7 +15,7 @@ use libafl_bolts::{
 };
 
 use crate::program::context::Context;
-use crate::{generator::generate_call, program::syscall::ArgMutator};
+use crate::{generator::generate_call, program::syscall::MutateArg};
 use crate::{input::SyscallInput, program::metadata::SyscallMetadata};
 
 pub struct SyscallSpliceMutator;

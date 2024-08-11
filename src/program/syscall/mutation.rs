@@ -5,7 +5,7 @@ use enum_downcast::EnumDowncast;
 
 use super::utility::*;
 use super::{
-    ArgGenerator, ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, IntType, PointerType,
+    ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, GenerateArg, IntType, PointerType,
     ResourceType, StringBuffer, StructType, UnionType,
 };
 use crate::program::{
@@ -14,18 +14,18 @@ use crate::program::{
 };
 
 #[enum_dispatch]
-pub trait ArgMutator {
+pub trait MutateArg {
     /// Mutate an existing argument for this field type
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call>;
 }
 
-impl ArgMutator for Field {
+impl MutateArg for Field {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         self.ty.mutate(rand, ctx, arg)
     }
 }
 
-impl ArgMutator for IntType {
+impl MutateArg for IntType {
     fn mutate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
 
@@ -45,7 +45,7 @@ impl ArgMutator for IntType {
     }
 }
 
-impl ArgMutator for FlagType {
+impl MutateArg for FlagType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
 
@@ -59,49 +59,49 @@ impl ArgMutator for FlagType {
     }
 }
 
-impl ArgMutator for ArrayType {
+impl MutateArg for ArrayType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("ArrayType::mutate")
     }
 }
 
-impl ArgMutator for PointerType {
+impl MutateArg for PointerType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("PointerType::mutate")
     }
 }
 
-impl ArgMutator for StringBuffer {
+impl MutateArg for StringBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("StringBuffer::mutate")
     }
 }
 
-impl ArgMutator for FilenameBuffer {
+impl MutateArg for FilenameBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("FilenameBuffer::mutate")
     }
 }
 
-impl ArgMutator for ByteBuffer {
+impl MutateArg for ByteBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("ByteBuffer::mutate")
     }
 }
 
-impl ArgMutator for StructType {
+impl MutateArg for StructType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("StructType::mutate")
     }
 }
 
-impl ArgMutator for UnionType {
+impl MutateArg for UnionType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         todo!("UnionType::mutate")
     }
 }
 
-impl ArgMutator for ResourceType {
+impl MutateArg for ResourceType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         // TODO: What to do with the old resource?
         let (new_arg, new_calls) = self.generate(rand, ctx);

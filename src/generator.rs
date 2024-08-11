@@ -8,7 +8,7 @@ use crate::input::SyscallInput;
 use crate::program::{
     call::{Arg, Call},
     context::Context,
-    syscall::{ArgGenerator, Field, Syscall},
+    syscall::{Field, GenerateArg, Syscall},
 };
 
 pub struct SyscallGenerator<S>

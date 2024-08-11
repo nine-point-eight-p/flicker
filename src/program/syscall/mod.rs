@@ -14,8 +14,8 @@ use super::call::{Arg, Call};
 use super::context::Context;
 use super::metadata::ARCH;
 
-pub use generation::ArgGenerator;
-pub use mutation::ArgMutator;
+pub use generation::GenerateArg;
+pub use mutation::MutateArg;
 
 #[derive(Debug, Clone)]
 pub struct Syscall {
@@ -70,7 +70,7 @@ impl Field {
     }
 }
 
-#[enum_dispatch(ArgGenerator, ArgMutator)]
+#[enum_dispatch(GenerateArg, MutateArg)]
 #[derive(Debug, Clone)]
 pub enum Type {
     IntType,
@@ -242,7 +242,7 @@ impl PointerType {
     }
 }
 
-#[enum_dispatch(ArgGenerator, ArgMutator)]
+#[enum_dispatch(GenerateArg, MutateArg)]
 #[derive(Debug, Clone)]
 enum BufferType {
     String(StringBuffer),

@@ -18,7 +18,7 @@ use crate::program::{
 };
 
 #[enum_dispatch]
-pub trait ArgGenerator {
+pub trait GenerateArg {
     /// Generate a new argument for this field type
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>);
 
@@ -26,7 +26,7 @@ pub trait ArgGenerator {
     fn default(&self) -> Arg;
 }
 
-impl ArgGenerator for Field {
+impl GenerateArg for Field {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         self.ty.generate(rand, ctx)
     }
@@ -46,7 +46,7 @@ impl IntType {
     }
 }
 
-impl ArgGenerator for IntType {
+impl GenerateArg for IntType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let val = self.generate_impl(rand);
         (ConstArg::new(val as u64).into(), vec![])
@@ -118,7 +118,7 @@ impl FlagType {
     }
 }
 
-impl ArgGenerator for FlagType {
+impl GenerateArg for FlagType {
     fn generate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context) -> (Arg, Vec<Call>) {
         let val = self.generate_impl(rand, 0);
         (ConstArg::new(val).into(), vec![])
@@ -129,7 +129,7 @@ impl ArgGenerator for FlagType {
     }
 }
 
-impl ArgGenerator for ArrayType {
+impl GenerateArg for ArrayType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         // Generate a random length
         let mut len = if let Some((min, max)) = self.range {
@@ -162,7 +162,7 @@ impl ArgGenerator for ArrayType {
     }
 }
 
-impl ArgGenerator for PointerType {
+impl GenerateArg for PointerType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         todo!("PointerType::generate")
     }
@@ -172,7 +172,7 @@ impl ArgGenerator for PointerType {
     }
 }
 
-impl ArgGenerator for StringBuffer {
+impl GenerateArg for StringBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let mut string = if !self.values.is_empty() {
             // Choose a special value
@@ -214,7 +214,7 @@ impl ArgGenerator for StringBuffer {
     }
 }
 
-impl ArgGenerator for FilenameBuffer {
+impl GenerateArg for FilenameBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         const SPECIAL_FILENAMES: [&str; 2] = ["", "."];
 
@@ -259,7 +259,7 @@ impl ArgGenerator for FilenameBuffer {
     }
 }
 
-impl ArgGenerator for ByteBuffer {
+impl GenerateArg for ByteBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let len = if let Some(range) = self.range {
             rand.between(range.0 as usize, range.1 as usize) as u64
@@ -293,7 +293,7 @@ impl ArgGenerator for ByteBuffer {
     }
 }
 
-impl ArgGenerator for StructType {
+impl GenerateArg for StructType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let (args, calls) = generate_args(rand, ctx, &self.fields);
         let arg = GroupArg::new(args).into();
@@ -306,7 +306,7 @@ impl ArgGenerator for StructType {
     }
 }
 
-impl ArgGenerator for UnionType {
+impl GenerateArg for UnionType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let field = &self.fields[rand.below(self.fields.len())];
         generate_arg(rand, ctx, field)
@@ -360,7 +360,7 @@ impl ResourceType {
     }
 }
 
-impl ArgGenerator for ResourceType {
+impl GenerateArg for ResourceType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         // Check if we can recurse
         let can_recurse = if ctx.generating_resource {

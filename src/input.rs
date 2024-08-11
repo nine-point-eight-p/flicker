@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::program::{
     call::{Arg, Call, ToExecBytes},
     metadata::SyscallMetadata,
-    syscall::ArgGenerator,
+    syscall::GenerateArg,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
