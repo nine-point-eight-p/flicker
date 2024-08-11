@@ -34,6 +34,7 @@ syzlang-parser = "0.1.4"
 log = "0.4.22"
 postcard = "1.0.8"
 uuid = "1.10.0"
+path-clean = "1.0.1"
 
 # You can also use pulled repo if you want to change something of the library
 # [patch."https://github.com/AFLplusplus/LibAFL/"]

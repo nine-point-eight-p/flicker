@@ -66,6 +66,7 @@ impl SyscallInput {
                 .return_type()
                 .unwrap();
             debug_assert!(return_type.is_resource());
+            // TODO: Check recursively for group args
             self.calls[idx..]
                 .iter_mut()
                 .flat_map(|c| c.args_mut())

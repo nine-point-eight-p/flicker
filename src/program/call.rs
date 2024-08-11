@@ -59,27 +59,28 @@ impl ToExecBytes for Call {
 pub enum Arg {
     ConstArg,
     PointerArg,
+    DataArg,
     GroupArg,
     ResultArg,
 }
 
-impl Arg {
-    pub fn for_each_subarg<F>(&self, mut f: F)
-    where
-        F: FnMut(&Arg),
-    {
-        match self {
-            Arg::GroupArg(group) => {
-                for arg in group.0.iter() {
-                    arg.for_each_subarg(&mut f);
-                }
-            }
-            _ => f(self),
-        }
-    }
-}
+// impl Arg {
+//     pub fn for_each_subarg<F>(&self, mut f: F)
+//     where
+//         F: FnMut(&Arg),
+//     {
+//         match self {
+//             Arg::GroupArg(group) => {
+//                 for arg in group.0.iter() {
+//                     arg.for_each_subarg(&mut f);
+//                 }
+//             }
+//             _ => f(self),
+//         }
+//     }
+// }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConstArg(pub u64);
 
 impl ConstArg {
@@ -95,20 +96,42 @@ impl ToExecBytes for ConstArg {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PointerArg {
-    addr: u64,
-    res: Box<Arg>,
+pub enum PointerArg {
+    Addr(u64),
+    Res(Box<Arg>),
 }
 
 impl PointerArg {
-    pub fn new(addr: u64, res: Box<Arg>) -> Self {
-        Self { addr, res }
+    pub fn from_addr(addr: u64) -> Self {
+        Self::Addr(addr)
+    }
+
+    pub fn from_res(res: Arg) -> Self {
+        Self::Res(Box::new(res))
     }
 }
 
 impl ToExecBytes for PointerArg {
     fn to_exec_bytes(&self) -> Vec<u8> {
-        to_allocvec(&self.addr).unwrap()
+        match &self {
+            PointerArg::Addr(addr) => to_allocvec(addr).unwrap(),
+            PointerArg::Res(res) => res.to_exec_bytes(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DataArg {
+    In(Vec<u8>),
+    Out(u64),
+}
+
+impl ToExecBytes for DataArg {
+    fn to_exec_bytes(&self) -> Vec<u8> {
+        match &self {
+            DataArg::In(data) => to_allocvec(data).unwrap(),
+            DataArg::Out(size) => to_allocvec(size).unwrap(),
+        }
     }
 }
 
@@ -126,11 +149,6 @@ impl ToExecBytes for GroupArg {
         self.0.iter().flat_map(|arg| arg.to_exec_bytes()).collect()
     }
 }
-
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct ResultArg {
-//     value: ResultArgInner,
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResultArg {

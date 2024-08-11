@@ -2,7 +2,11 @@ use syzlang_parser::parser::{Arch, Parsed};
 
 use crate::program::syscall::Syscall;
 
-const ARCH: Arch = Arch::Riscv64;
+#[cfg(feature = "riscv64")]
+pub const ARCH: Arch = Arch::Riscv64;
+
+#[cfg(feature = "x86_64")]
+pub const ARCH: Arch = Arch::X86_64;
 
 #[derive(Debug, Clone)]
 pub struct SyscallMetadata(Vec<Syscall>);

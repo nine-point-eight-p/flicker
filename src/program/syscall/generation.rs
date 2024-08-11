@@ -1,14 +1,19 @@
+use std::iter;
+use std::ops::Neg;
+
 use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
 use uuid::Uuid;
 
+use super::utility::*;
 use super::{
-    ArrayType, Field, FlagType, IntType, PointerType, ResourceType, StructType, UnionType,
+    ArrayType, ByteBuffer, Direction, Field, FilenameBuffer, FlagType, IntType, PointerType,
+    ResourceType, StringBuffer, StructType, UnionType,
 };
 use crate::generator::{generate_arg, generate_args, generate_call};
 use crate::program::{
-    call::{Arg, Call, ConstArg, GroupArg, ResultArg},
+    call::{Arg, Call, ConstArg, DataArg, GroupArg, ResultArg},
     context::Context,
 };
 
@@ -33,7 +38,11 @@ impl ArgGenerator for Field {
 
 impl IntType {
     pub(super) fn generate_impl<R: Rand>(&self, rand: &mut R) -> u64 {
-        rand.between(self.begin as usize, self.end as usize) as u64
+        if let Some((min, max)) = self.range {
+            rand.between(min as usize, max as usize) as u64
+        } else {
+            rand_int(rand, self.bits)
+        }
     }
 }
 
@@ -44,7 +53,7 @@ impl ArgGenerator for IntType {
     }
 
     fn default(&self) -> Arg {
-        ConstArg::new(self.begin as u64).into()
+        ConstArg::default().into()
     }
 }
 
@@ -116,27 +125,39 @@ impl ArgGenerator for FlagType {
     }
 
     fn default(&self) -> Arg {
-        ConstArg::new(0).into()
+        ConstArg::default().into()
     }
 }
 
 impl ArgGenerator for ArrayType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let size = rand.between(self.begin.try_into().unwrap(), self.end.try_into().unwrap());
-        assert!(size > 0);
+        // Generate a random length
+        let mut len = if let Some((min, max)) = self.range {
+            rand.between(min as usize, max as usize) as u64
+        } else {
+            rand_array_length(rand)
+        };
+
+        // Generate at least one element if we are generating a resource
+        if ctx.generating_resource && len == 0 {
+            len = 1;
+        }
+
+        // Generate the elements
         let (args, calls): (Vec<Arg>, Vec<Vec<Call>>) =
-            (0..size).map(|_| self.elem.generate(rand, ctx)).unzip();
+            iter::repeat_with(|| self.elem.generate(rand, ctx))
+                .take(len as usize)
+                .unzip();
         let arg = GroupArg::new(args).into();
         let calls = calls.into_iter().flatten().collect();
         (arg, calls)
     }
 
     fn default(&self) -> Arg {
-        let args = if self.begin == self.end {
-            vec![self.elem.default(); self.begin as usize]
-        } else {
-            vec![]
-        };
+        let args = self
+            .range
+            .map(|(min, _)| vec![self.elem.default(); min as usize])
+            .unwrap_or_default();
         GroupArg::new(args).into()
     }
 }
@@ -148,6 +169,127 @@ impl ArgGenerator for PointerType {
 
     fn default(&self) -> Arg {
         todo!("PointerType::default")
+    }
+}
+
+impl ArgGenerator for StringBuffer {
+    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+        let mut string = if !self.values.is_empty() {
+            // Choose a special value
+            self.values[rand.below(self.values.len())].clone()
+        } else if binary(rand) {
+            // Use existing strings
+            sample_from_iter(rand, ctx.strings().iter())
+                .cloned()
+                .unwrap_or_else(|| rand_string(rand))
+        } else {
+            // Generate a new one
+            rand_string(rand)
+        };
+
+        // The null byte will appear/disappear unexpectedly with a probability of 1/100
+        if one_of(rand, 100) == self.no_zero {
+            string.push('\0');
+        };
+
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => DataArg::In(string.into_bytes()),
+            Direction::Out => DataArg::Out(string.len() as u64),
+        };
+        (arg.into(), vec![])
+    }
+
+    fn default(&self) -> Arg {
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => {
+                if self.values.len() == 1 {
+                    DataArg::In(self.values[0].clone().into_bytes())
+                } else {
+                    DataArg::In(Vec::default())
+                }
+            }
+            Direction::Out => DataArg::Out(u64::default()),
+        };
+        arg.into()
+    }
+}
+
+impl ArgGenerator for FilenameBuffer {
+    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+        const SPECIAL_FILENAMES: [&str; 2] = ["", "."];
+
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => {
+                let mut filename = if one_of(rand, 100) {
+                    // Use a special filename
+                    SPECIAL_FILENAMES[rand.below(SPECIAL_FILENAMES.len())].to_string()
+                } else if n_out_of(rand, 9, 10) {
+                    // Use an existing filename
+                    sample_from_iter(rand, ctx.filenames().iter())
+                        .cloned()
+                        .unwrap_or_else(|| rand_filename(rand, ctx))
+                } else {
+                    // Generate a new one
+                    rand_filename(rand, ctx)
+                };
+                if !self.no_zero {
+                    filename.push('\0');
+                }
+                DataArg::In(filename.into_bytes())
+            }
+            Direction::Out => {
+                // We consider the filename length to be variable
+                let len = if n_out_of(rand, 1, 3) {
+                    rand.below(100) as u64
+                } else {
+                    rand_filename_length(rand)
+                };
+                DataArg::Out(len)
+            }
+        };
+        (arg.into(), vec![])
+    }
+
+    fn default(&self) -> Arg {
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => DataArg::In(Vec::default()),
+            Direction::Out => DataArg::Out(u64::default()),
+        };
+        arg.into()
+    }
+}
+
+impl ArgGenerator for ByteBuffer {
+    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+        let len = if let Some(range) = self.range {
+            rand.between(range.0 as usize, range.1 as usize) as u64
+        } else {
+            rand_buffer_length(rand)
+        };
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => {
+                let data = iter::repeat_with(|| rand.below(256) as u8)
+                    .take(len as usize)
+                    .collect();
+                DataArg::In(data)
+            }
+            Direction::Out => DataArg::Out(len),
+        };
+        (arg.into(), vec![])
+    }
+
+    fn default(&self) -> Arg {
+        let arg = match self.dir {
+            Direction::In | Direction::InOut => {
+                if !is_var_len(self.range) {
+                    DataArg::In(vec![0; self.range.unwrap().0 as usize])
+                } else {
+                    DataArg::In(Vec::default())
+                }
+            }
+            Direction::Out => DataArg::Out(u64::default()),
+        };
+        arg.into()
     }
 }
 
@@ -214,7 +356,7 @@ impl ResourceType {
             .collect();
         // Randomly choose one if there is any
         (!results.is_empty())
-            .then_some(ResultArg::from_result(*results[rand.below(results.len())]).into())
+            .then(|| ResultArg::from_result(*results[rand.below(results.len())]).into())
     }
 }
 
@@ -255,18 +397,151 @@ impl ArgGenerator for ResourceType {
     }
 }
 
-#[inline]
-fn binary<R: Rand>(rand: &mut R) -> bool {
-    rand.below(2) == 0
+// Helper functions
+
+/// Returns a random int in range [0..n),
+/// probability of n-1 is k times higher than probability of 0.
+fn biased_rand<R: Rand>(rand: &mut R, n: usize, k: usize) -> u64 {
+    let nf = n as f64;
+    let kf = k as f64;
+    let rf = nf * (kf / 2.0 + 1.0) * rand.next_float();
+    let bf = (-1.0 + (1.0 + 2.0 * kf * rf / nf).sqrt()) * nf / kf;
+    bf as u64
+}
+
+/// Generate a random integer.
+fn rand_int<R: Rand>(rand: &mut R, bits: u8) -> u64 {
+    let mut val = rand.next();
+
+    // Set the value into a range
+    if n_out_of(rand, 100, 182) {
+        val %= 10;
+    } else if bits >= 8 && n_out_of(rand, 50, 82) {
+    } else if n_out_of(rand, 10, 32) {
+        val %= 256;
+    } else if n_out_of(rand, 10, 22) {
+        val %= 0x1000;
+    } else if n_out_of(rand, 10, 12) {
+        val %= 0x10000;
+    } else {
+        val %= 0x8000_0000;
+    }
+
+    // Negate or shift the value
+    if n_out_of(rand, 100, 107) {
+        // Do nothing
+    } else if n_out_of(rand, 5, 7) {
+        val = (val as i64).neg() as u64;
+    } else {
+        val <<= rand.below(bits as usize);
+    }
+
+    // Truncate value to the number of bits
+    val & ((1 << bits) - 1)
+}
+
+/// Generate a random array length.
+fn rand_array_length<R: Rand>(rand: &mut R) -> u64 {
+    const MAX_ARRAY_LENGTH: u64 = 10;
+    let n = MAX_ARRAY_LENGTH + 1;
+    (biased_rand(rand, n as usize, 10) + 1) % n
+}
+
+/// Generate a random string.
+fn rand_string<R: Rand>(rand: &mut R) -> String {
+    const PUNCT: [char; 23] = [
+        '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '+', '\\', '/', ':', '.', ',', '-',
+        '\'', '[', ']', '{', '}',
+    ];
+
+    let mut buf = String::new();
+    while n_out_of(rand, 3, 4) {
+        if n_out_of(rand, 10, 11) {
+            buf.push(PUNCT[rand.below(PUNCT.len())]);
+        } else {
+            buf.push(rand.below(256) as u8 as char);
+        }
+    }
+    buf
+}
+
+/// Generate a random filename.
+fn rand_filename<R: Rand>(rand: &mut R, ctx: &Context) -> String {
+    let mut dir = if binary(rand) {
+        sample_from_iter(rand, ctx.filenames().iter())
+            .cloned()
+            .unwrap_or(".".to_string())
+    } else {
+        ".".to_string()
+    };
+    if dir.ends_with("\0") {
+        dir.pop();
+    }
+    if one_of(rand, 10)
+        && path_clean::clean(&dir)
+            .into_os_string()
+            .into_string()
+            .unwrap()
+            != "."
+    {
+        dir.push_str("/..");
+    }
+
+    let mut i = 1;
+    loop {
+        let mut name = format!("{}/file{}", dir, i);
+        if one_of(rand, 100) {
+            // Vary the length
+            let len = rand_filename_length(rand) as usize;
+            if len > name.len() {
+                name += str::repeat("a", len - name.len()).as_str();
+            }
+        }
+        if !ctx.filenames().contains(&name) {
+            return name;
+        }
+        i += 1;
+    }
+}
+
+/// Generate a random filename length.
+fn rand_filename_length<R: Rand>(rand: &mut R) -> u64 {
+    // TODO: Configure for different targets
+    const SPECIAL_FILE_LENGTHS: [u64; 1] = [4096];
+
+    let off = biased_rand(rand, 10, 5);
+    let len = SPECIAL_FILE_LENGTHS[rand.below(SPECIAL_FILE_LENGTHS.len())];
+    let res = if binary(rand) {
+        len + off
+    } else {
+        len.checked_sub(off).unwrap_or(0)
+    };
+    res
+}
+
+/// Generate a random buffer length.
+fn rand_buffer_length<R: Rand>(rand: &mut R) -> u64 {
+    if n_out_of(rand, 50, 56) {
+        rand.below(256) as u64
+    } else if n_out_of(rand, 5, 6) {
+        0x1000
+    } else {
+        0
+    }
 }
 
 #[inline]
-fn one_of<R: Rand>(rand: &mut R, n: usize) -> bool {
-    rand.below(n) == 0
+fn sample_from_iter<T, I, R>(rand: &mut R, iter: I) -> Option<T>
+where
+    T: Clone,
+    I: Iterator<Item = T>,
+    R: Rand,
+{
+    let vec: Vec<_> = iter.collect();
+    (!vec.is_empty()).then(|| vec[rand.below(vec.len())].clone())
 }
 
 #[inline]
-fn n_out_of<R: Rand>(rand: &mut R, n: usize, total: usize) -> bool {
-    debug_assert!(0 < n && n < total);
-    rand.below(total) < n
+fn is_var_len(range: Option<(u64, u64)>) -> bool {
+    range.map_or(true, |(min, max)| min != max)
 }
