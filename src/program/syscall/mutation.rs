@@ -1,17 +1,23 @@
+use libafl::{
+    inputs::{BytesInput, HasMutatorBytes},
+    mutators::{havoc_mutations_no_crossover, HavocMutationsNoCrossoverType},
+    prelude::{MutationResult, MutatorsTuple},
+    state::{HasRand, NopState},
+};
 use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
 use enum_downcast::EnumDowncast;
+use libafl_bolts::HasLen;
 
+use super::generation::rand_filename_length;
 use super::utility::*;
 use super::{
     ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, GenerateArg, IntType, PointerType,
     ResourceType, StringBuffer, StructType, UnionType,
 };
-use crate::program::{
-    call::{Arg, Call, ConstArg},
-    context::Context,
-};
+use crate::program::call::{Arg, Call, ConstArg, DataArg};
+use crate::program::context::Context;
 
 #[enum_dispatch]
 pub trait MutateArg {
@@ -32,12 +38,11 @@ impl MutateArg for IntType {
         arg.0 = if binary(rand) {
             self.generate_impl(rand)
         } else {
-            if one_of(rand, 3) {
-                arg.0.wrapping_add(rand.below(4) as u64 + 1)
-            } else if one_of(rand, 2) {
-                arg.0.wrapping_sub(rand.below(4) as u64 + 1)
-            } else {
-                arg.0 ^ (1 << rand.below(self.bits as usize))
+            // Refactored, but the probability is the same as syzkaller implementation
+            match rand.below(5) {
+                0 => arg.0.wrapping_add(rand.below(4) as u64 + 1),
+                1 => arg.0.wrapping_sub(rand.below(4) as u64 + 1),
+                _ => arg.0 ^ (1 << rand.below(self.bits as usize)),
             }
         };
 
@@ -73,19 +78,58 @@ impl MutateArg for PointerType {
 
 impl MutateArg for StringBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("StringBuffer::mutate")
+        let arg = arg.enum_downcast_mut::<DataArg>().unwrap();
+
+        match arg {
+            DataArg::In(data) => {
+                if !self.values.is_empty() {
+                    // Regenerate
+                    *data = self.generate_string(rand, ctx).into_bytes();
+                } else {
+                    // Mutate
+                    mutate_bytes(data);
+                }
+            }
+            DataArg::Out(len) => {
+                mutate_buffer_length(rand, len, None);
+            }
+        }
+
+        vec![]
     }
 }
 
 impl MutateArg for FilenameBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("FilenameBuffer::mutate")
+        let arg = arg.enum_downcast_mut::<DataArg>().unwrap();
+
+        match arg {
+            DataArg::In(data) => {
+                *data = self.generate_filename(rand, ctx).into_bytes();
+            }
+            DataArg::Out(len) => {
+                if one_of(rand, 100) {
+                    *len = rand_filename_length(rand);
+                } else {
+                    mutate_buffer_length(rand, len, None);
+                }
+            }
+        }
+
+        vec![]
     }
 }
 
 impl MutateArg for ByteBuffer {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("ByteBuffer::mutate")
+        let arg = arg.enum_downcast_mut::<DataArg>().unwrap();
+
+        match arg {
+            DataArg::In(data) => mutate_bytes(data),
+            DataArg::Out(len) => mutate_buffer_length(rand, len, self.range),
+        }
+
+        vec![]
     }
 }
 
@@ -108,4 +152,41 @@ impl MutateArg for ResourceType {
         *arg = new_arg;
         new_calls
     }
+}
+
+/// Mutate some bytes with mutators from [`libafl::mutators::havoc_mutations_no_crossover`].
+fn mutate_bytes(bytes: &mut [u8]) {
+    let mut mutators = havoc_mutations_no_crossover();
+    let mut nop_state = NopState::<BytesInput>::new();
+    let mut input = BytesInput::new(bytes.to_vec());
+
+    loop {
+        let index = nop_state.rand_mut().below(mutators.len());
+        let result = mutators
+            .get_and_mutate(index.into(), &mut nop_state, &mut input)
+            .unwrap();
+        if result == MutationResult::Mutated && one_of(nop_state.rand_mut(), 3) {
+            break;
+        }
+    }
+
+    bytes.copy_from_slice(input.bytes());
+}
+
+/// Mutate the length of a buffer.
+fn mutate_buffer_length<R: Rand>(rand: &mut R, old_len: &mut u64, range: Option<(u64, u64)>) {
+    let (min, max) = range.unwrap_or((0, 0x20000)); // max size: 128KB
+    let mut new_len = *old_len;
+
+    while new_len == *old_len {
+        new_len += rand.below(33) as u64 - 16; // [0, 33) -> [-16, 17)
+        if (new_len as i64) < (min as i64) {
+            new_len = min;
+        }
+        if new_len > max {
+            new_len = max;
+        }
+    }
+
+    *old_len = new_len;
 }

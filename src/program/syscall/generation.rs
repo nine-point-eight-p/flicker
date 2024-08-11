@@ -172,8 +172,8 @@ impl GenerateArg for PointerType {
     }
 }
 
-impl GenerateArg for StringBuffer {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+impl StringBuffer {
+    pub(super) fn generate_string<R: Rand>(&self, rand: &mut R, ctx: &Context) -> String {
         let mut string = if !self.values.is_empty() {
             // Choose a special value
             self.values[rand.below(self.values.len())].clone()
@@ -192,6 +192,13 @@ impl GenerateArg for StringBuffer {
             string.push('\0');
         };
 
+        string
+    }
+}
+
+impl GenerateArg for StringBuffer {
+    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+        let string = self.generate_string(rand, ctx);
         let arg = match self.dir {
             Direction::In | Direction::InOut => DataArg::In(string.into_bytes()),
             Direction::Out => DataArg::Out(string.len() as u64),
@@ -214,28 +221,34 @@ impl GenerateArg for StringBuffer {
     }
 }
 
-impl GenerateArg for FilenameBuffer {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+impl FilenameBuffer {
+    pub(super) fn generate_filename<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> String {
         const SPECIAL_FILENAMES: [&str; 2] = ["", "."];
 
+        let mut filename = if one_of(rand, 100) {
+            // Use a special filename
+            SPECIAL_FILENAMES[rand.below(SPECIAL_FILENAMES.len())].to_string()
+        } else if n_out_of(rand, 9, 10) {
+            // Use an existing filename
+            sample_from_iter(rand, ctx.filenames().iter())
+                .cloned()
+                .unwrap_or_else(|| rand_filename(rand, ctx))
+        } else {
+            // Generate a new one
+            rand_filename(rand, ctx)
+        };
+        if !self.no_zero {
+            filename.push('\0');
+        }
+        filename
+    }
+}
+
+impl GenerateArg for FilenameBuffer {
+    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let arg = match self.dir {
             Direction::In | Direction::InOut => {
-                let mut filename = if one_of(rand, 100) {
-                    // Use a special filename
-                    SPECIAL_FILENAMES[rand.below(SPECIAL_FILENAMES.len())].to_string()
-                } else if n_out_of(rand, 9, 10) {
-                    // Use an existing filename
-                    sample_from_iter(rand, ctx.filenames().iter())
-                        .cloned()
-                        .unwrap_or_else(|| rand_filename(rand, ctx))
-                } else {
-                    // Generate a new one
-                    rand_filename(rand, ctx)
-                };
-                if !self.no_zero {
-                    filename.push('\0');
-                }
-                DataArg::In(filename.into_bytes())
+                DataArg::In(self.generate_filename(rand, ctx).into_bytes())
             }
             Direction::Out => {
                 // We consider the filename length to be variable
@@ -505,7 +518,7 @@ fn rand_filename<R: Rand>(rand: &mut R, ctx: &Context) -> String {
 }
 
 /// Generate a random filename length.
-fn rand_filename_length<R: Rand>(rand: &mut R) -> u64 {
+pub(super) fn rand_filename_length<R: Rand>(rand: &mut R) -> u64 {
     // TODO: Configure for different targets
     const SPECIAL_FILE_LENGTHS: [u64; 1] = [4096];
 
