@@ -14,7 +14,7 @@ use libafl::{
     observers::{CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver},
     schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler},
     stages::{CalibrationStage, StdMutationalStage},
-    state::{HasCorpus, StdState},
+    state::{HasCorpus, HasMaxSize, StdState},
     Error,
 };
 use libafl_bolts::{
@@ -55,6 +55,7 @@ pub fn fuzz(opt: FuzzerOption) {
         crash,
         desc,
         r#const,
+        max_calls,
         mut run_args,
     } = opt;
 
@@ -127,7 +128,7 @@ pub fn fuzz(opt: FuzzerOption) {
 
         // If not restarting, create a State from scratch
         let mut state = state.unwrap_or_else(|| {
-            StdState::new(
+            let mut new_state = StdState::new(
                 // RNG
                 StdRand::with_seed(current_nanos()),
                 // Corpus that will be evolved, we keep it in memory for performance
@@ -141,7 +142,9 @@ pub fn fuzz(opt: FuzzerOption) {
                 // Same for objective feedbacks
                 &mut objective,
             )
-            .unwrap()
+            .unwrap();
+            new_state.set_max_size(max_calls);
+            new_state
         });
 
         // A minimization+queue policy to get testcasess from the corpus
@@ -190,7 +193,7 @@ pub fn fuzz(opt: FuzzerOption) {
             } else {
                 println!("Failed to import initial inputs, try to generate");
                 let context = Context::new(metadata.clone());
-                let mut generator = SyscallGenerator::new(64, context);
+                let mut generator = SyscallGenerator::new(30, context);
                 state
                     .generate_initial_inputs(
                         &mut fuzzer,

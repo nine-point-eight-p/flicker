@@ -35,6 +35,10 @@ pub struct FuzzerOption {
     #[clap(long)]
     pub r#const: String,
 
+    /// Max number of calls per run
+    #[clap(long, default_value = "30")]
+    pub max_calls: usize,
+
     /// Arguments passed to Qemu
     #[clap(num_args = 0.., allow_hyphen_values = true)]
     pub run_args: Vec<String>,

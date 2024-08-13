@@ -4,7 +4,8 @@ use libafl::inputs::{HasTargetBytes, Input};
 use libafl_bolts::{ownedref::OwnedSlice, HasLen};
 
 use ahash::RandomState;
-use postcard::to_allocvec;
+use log::info;
+use postcard::to_stdvec;
 use serde::{Deserialize, Serialize};
 
 use crate::program::{
@@ -83,7 +84,10 @@ impl SyscallInput {
 impl Input for SyscallInput {
     fn generate_name(&self, idx: usize) -> String {
         let mut hasher = RandomState::with_seeds(0, 0, 0, 0).build_hasher();
-        hasher.write(&self.target_bytes());
+        hasher.write(&idx.to_le_bytes());
+        self.calls
+            .iter()
+            .for_each(|c| hasher.write(&c.number().to_le_bytes()));
         format!("{:016x}", hasher.finish())
     }
 }
@@ -97,8 +101,15 @@ impl HasLen for SyscallInput {
 impl HasTargetBytes for SyscallInput {
     fn target_bytes(&self) -> OwnedSlice<u8> {
         let len = self.calls.len() as u32;
-        let mut bytes = to_allocvec(&len).unwrap();
+        info!("[SyscallInput::target_bytes] Input length: {} calls", len);
+
+        let mut bytes = to_stdvec(&len).unwrap();
         bytes.extend(self.calls.iter().flat_map(|c| c.to_exec_bytes()));
+        info!(
+            "[SyscallInput::target_bytes] Input size: {} bytes",
+            bytes.len()
+        );
+
         bytes.into()
     }
 }

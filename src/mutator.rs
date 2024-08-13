@@ -18,7 +18,9 @@ use crate::program::context::Context;
 use crate::{generator::generate_call, program::syscall::MutateArg};
 use crate::{input::SyscallInput, program::metadata::SyscallMetadata};
 
-pub struct SyscallSpliceMutator;
+pub struct SyscallSpliceMutator {
+    metadata: SyscallMetadata,
+}
 
 impl<S> Mutator<SyscallInput, S> for SyscallSpliceMutator
 where
@@ -40,6 +42,11 @@ where
 
         // Replace input calls after the position with the calls from the corpus entry
         input.splice(pos, other.take().into_iter());
+
+        // Remove calls outside the max size
+        for idx in (state.max_size()..input.len()).rev() {
+            input.remove(idx, &self.metadata);
+        }
 
         Ok(MutationResult::Mutated)
     }
@@ -81,6 +88,11 @@ where
 
         // Insert new calls
         input.insert(pos, new_calls.into_iter());
+
+        // Remove calls outside the max size
+        for idx in (state.max_size()..input.len()).rev() {
+            input.remove(idx, &self.metadata);
+        }
 
         Ok(MutationResult::Mutated)
     }
@@ -170,7 +182,9 @@ pub fn syscall_mutations(
     SyscallRemoveMutator
 ) {
     tuple_list!(
-        SyscallSpliceMutator,
+        SyscallSpliceMutator {
+            metadata: metadata.clone()
+        },
         SyscallInsertMutator {
             metadata: metadata.clone()
         },

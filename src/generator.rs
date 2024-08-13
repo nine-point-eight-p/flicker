@@ -3,12 +3,13 @@ use std::marker::PhantomData;
 use libafl::HasMetadata;
 use libafl::{generators::Generator, state::HasRand, Error};
 use libafl_bolts::rands::Rand;
+use log::info;
 
 use crate::input::SyscallInput;
 use crate::program::{
     call::{Arg, Call},
     context::Context,
-    syscall::{Field, GenerateArg, Syscall},
+    syscall::{Field, GenerateArg, Syscall, Type},
 };
 
 pub struct SyscallGenerator<S>
@@ -29,11 +30,16 @@ where
         let mut calls = vec![];
         let mut size = 0;
         while size < self.max_size {
-            let syscall = rand.choose(self.context.syscalls().iter()).unwrap().clone();
+            let idx = rand.below(self.context.syscalls().len());
+            let syscall = self.context.syscalls()[idx].clone();
             let new_calls = generate_call(rand, &mut self.context, &syscall);
             size += new_calls.len();
             calls.extend(new_calls);
         }
+        info!(
+            "[SyscallGenerator::generate] Generated {} calls",
+            calls.len()
+        );
         Ok(SyscallInput::new(calls))
     }
 }
@@ -69,12 +75,12 @@ pub fn generate_args<R: Rand>(
 ) -> (Vec<Arg>, Vec<Call>) {
     let (args, calls): (Vec<Arg>, Vec<Vec<Call>>) = fields
         .iter()
-        .map(|field| generate_arg(rand, ctx, field))
+        .map(|field| generate_arg(rand, ctx, &field.ty))
         .unzip();
     let calls = calls.into_iter().flatten().collect();
     (args, calls)
 }
 
-pub fn generate_arg<R: Rand>(rand: &mut R, ctx: &mut Context, field: &Field) -> (Arg, Vec<Call>) {
-    field.generate(rand, ctx)
+pub fn generate_arg<R: Rand>(rand: &mut R, ctx: &mut Context, ty: &Type) -> (Arg, Vec<Call>) {
+    ty.generate(rand, ctx)
 }
