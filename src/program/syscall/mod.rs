@@ -6,8 +6,8 @@ use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
 use syzlang_parser::parser::{
-    ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType, Identifier,
-    Parsed, Resource, Struct, Union, Value,
+    ArgIdent, ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType,
+    Identifier, Parsed, Resource, Struct, Union, Value,
 };
 
 use super::call::{Arg, Call};
@@ -256,7 +256,12 @@ impl BufferType {
         match arg_type {
             // string or string[filename]
             ArgType::String => {
-                if arg_type.is_filename() {
+                // Can't use arg_type.is_filename here since after post-processing
+                // the parsed things, `filename` has been converted to `string[filename]`
+                let is_filename = find_ident_value(&argument.opts)
+                    .map(|ident| ident.name == "filename")
+                    .unwrap_or(false);
+                if is_filename {
                     FilenameBuffer::from_argument(argument).into()
                 } else {
                     StringBuffer::from_argument(argument, ctx).into()
@@ -280,16 +285,22 @@ struct StringBuffer {
 
 impl StringBuffer {
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
-        // Use the const values if provided in the argument
-        let mut values = find_string_values(&argument.opts);
-        // If no values are provided, try to get them from the flag
-        if values.is_empty() {
+        let values = if let Some(value) = find_string_value(&argument.opts) {
+            // Use the const values if provided in the argument
+            vec![value]
+        } else {
+            // If no values are provided, try to get them from the flag
             if let Some(flag_name) = find_ident(&argument.opts) {
-                let flag = ctx.get_flag(flag_name).unwrap();
-                values = flag.args().map(value_to_string).collect();
+                let flag = ctx
+                    .get_flag(flag_name)
+                    .expect(format!("Unknown string flag: {flag_name}").as_str());
+                let mut values: Vec<String> = flag.args().map(value_to_string).collect();
+                values.sort();
+                values
+            } else {
+                vec![]
             }
-        }
-
+        };
         let no_zero = argument.argtype == ArgType::StringNoz;
         let dir = find_dir(&argument.opts);
 
@@ -416,14 +427,20 @@ fn find_length(arg_opts: &[ArgOpt]) -> Option<(u64, u64)> {
     })
 }
 
-fn find_string_values(arg_opts: &[ArgOpt]) -> Vec<String> {
-    arg_opts
-        .iter()
-        .filter_map(|opt| match opt {
-            ArgOpt::Value(val) => Some(value_to_string(val)),
-            _ => None,
-        })
-        .collect()
+fn find_string_value(arg_opts: &[ArgOpt]) -> Option<String> {
+    arg_opts.iter().find_map(|opt| match opt {
+        // Don't use `value_to_string` here because we don't need to panic
+        // if the value is not a string
+        ArgOpt::Value(Value::String(val)) => Some(val.clone()),
+        _ => None,
+    })
+}
+
+fn find_ident_value(arg_opts: &[ArgOpt]) -> Option<&Identifier> {
+    arg_opts.iter().find_map(|opt| match opt {
+        ArgOpt::Value(Value::Ident(ident)) => Some(ident),
+        _ => None,
+    })
 }
 
 fn value_to_u64(value: &Value) -> u64 {
@@ -439,7 +456,7 @@ fn value_to_u64_flatten(value: &Value, ctx: &Parsed) -> Option<u64> {
         Value::Ident(ident) => ctx
             .consts()
             .consts()
-            .find(|c| c.name() == ident.name.as_str())
+            .find(|c| c.name() == ident.name)
             .and_then(|c| c.as_uint().ok()),
         _ => None,
     }
