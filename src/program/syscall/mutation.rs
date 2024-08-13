@@ -72,7 +72,10 @@ impl MutateArg for ArrayType {
 
 impl MutateArg for PointerType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        todo!("PointerType::mutate")
+        // Simply regenerate
+        let (new_arg, new_calls) = self.generate(rand, ctx);
+        *arg = new_arg;
+        new_calls
     }
 }
 
@@ -156,6 +159,7 @@ impl MutateArg for ResourceType {
 
 /// Mutate some bytes with mutators from [`libafl::mutators::havoc_mutations_no_crossover`].
 fn mutate_bytes(bytes: &mut [u8]) {
+    // TODO: Maybe use `static` to avoid re-creating the mutators and state every time
     let mut mutators = havoc_mutations_no_crossover();
     let mut nop_state = NopState::<BytesInput>::new();
     let mut input = BytesInput::new(bytes.to_vec());

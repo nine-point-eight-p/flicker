@@ -13,7 +13,7 @@ use super::{
 };
 use crate::generator::{generate_arg, generate_args, generate_call};
 use crate::program::{
-    call::{Arg, Call, ConstArg, DataArg, GroupArg, ResultArg},
+    call::{Arg, Call, ConstArg, DataArg, GroupArg, PointerArg, ResultArg},
     context::Context,
 };
 
@@ -145,7 +145,7 @@ impl GenerateArg for ArrayType {
 
         // Generate the elements
         let (args, calls): (Vec<Arg>, Vec<Vec<Call>>) =
-            iter::repeat_with(|| self.elem.generate(rand, ctx))
+            iter::repeat_with(|| generate_arg(rand, ctx, &self.elem))
                 .take(len as usize)
                 .unzip();
         let arg = GroupArg::new(args).into();
@@ -164,11 +164,18 @@ impl GenerateArg for ArrayType {
 
 impl GenerateArg for PointerType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        todo!("PointerType::generate")
+        // The resource we are trying to generate may be in the pointer,
+        // so don't try to create an empty special pointer during resource generation.
+        if !ctx.generating_resource && one_of(rand, 1000) {
+            (PointerArg::from_addr(0).into(), vec![])
+        } else {
+            let (arg, calls) = generate_arg(rand, ctx, &self.elem);
+            (PointerArg::from_res(arg).into(), calls)
+        }
     }
 
     fn default(&self) -> Arg {
-        todo!("PointerType::default")
+        PointerArg::default().into()
     }
 }
 
@@ -274,8 +281,8 @@ impl GenerateArg for FilenameBuffer {
 
 impl GenerateArg for ByteBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let len = if let Some(range) = self.range {
-            rand.between(range.0 as usize, range.1 as usize) as u64
+        let len = if let Some((min, max)) = self.range {
+            rand.between(min as usize, max as usize) as u64
         } else {
             rand_buffer_length(rand)
         };
@@ -322,7 +329,7 @@ impl GenerateArg for StructType {
 impl GenerateArg for UnionType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let field = &self.fields[rand.below(self.fields.len())];
-        generate_arg(rand, ctx, field)
+        generate_arg(rand, ctx, &field.ty)
     }
 
     fn default(&self) -> Arg {
