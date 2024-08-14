@@ -1,6 +1,8 @@
 mod generation;
 mod mutation;
 
+use std::iter;
+
 use libafl_bolts::rands::Rand;
 
 use enum_common_fields::EnumCommonFields;
@@ -423,15 +425,26 @@ pub struct ResourceType {
 
 impl ResourceType {
     fn from_resource(resource: &Resource, ctx: &Parsed, attr: TypeAttr) -> Self {
-        let values: Vec<u64> = resource
-            .consts
+        let path = ctx.resource_to_basics(&resource.name);
+        let mut values: Vec<_> = path[..path.len() - 1]
             .iter()
-            .map(|val| value_to_u64_flatten(val, ctx).unwrap())
+            .map(|ty| match ty {
+                ArgType::Ident(ident) => ctx.get_resource(&ident).expect("Unknown resource type"),
+                _ => panic!("Invalid resource inheritance path"),
+            })
+            .chain(iter::once(resource)) // Add the current resource
+            .flat_map(|res| {
+                res.consts
+                    .iter()
+                    .map(|val| value_to_u64_flatten(val, ctx).unwrap())
+            })
             .collect();
         assert!(
             !values.is_empty(),
             "Resource type has to provide at least one value as default"
         );
+        values.sort();
+        values.dedup();
         Self {
             attr,
             name: resource.name.name.clone(),
