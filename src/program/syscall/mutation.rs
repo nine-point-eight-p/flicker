@@ -12,8 +12,8 @@ use libafl_bolts::HasLen;
 
 use super::generation::{rand_filename_length, MAX_BUFFER_LENGTH};
 use super::{
-    ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, IntType, PointerType,
-    ResourceType, StringBuffer, StructType, Type, UnionType,
+    ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, IntType, PointerType, ResourceType,
+    StringBuffer, StructType, Type, UnionType,
 };
 use crate::generator::generate_arg;
 use crate::program::{
@@ -99,7 +99,9 @@ impl MutateArg for StringBuffer {
             DataArg::In(data) => {
                 if !self.values.is_empty() {
                     // Regenerate
-                    *data = self.generate_string(rand, ctx).into_bytes();
+                    let mut bytes = self.generate_string(rand, ctx).into_bytes();
+                    bytes.truncate(MAX_BUFFER_LENGTH as usize);
+                    *data = bytes;
                 } else {
                     // Mutate
                     mutate_bytes(data, None);
@@ -120,7 +122,8 @@ impl MutateArg for FilenameBuffer {
 
         match arg {
             DataArg::In(data) => {
-                *data = self.generate_filename(rand, ctx).into_bytes();
+                let mut bytes = self.generate_filename(rand, ctx).into_bytes();
+                bytes.truncate(MAX_BUFFER_LENGTH as usize);
             }
             DataArg::Out(len) => {
                 if one_of(rand, 100) {

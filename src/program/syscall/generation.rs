@@ -213,7 +213,16 @@ impl GenerateArg for StringBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let string = self.generate_string(rand, ctx);
         let arg = match self.attr.dir {
-            Direction::In | Direction::InOut => DataArg::In(string.into_bytes()),
+            Direction::In | Direction::InOut => {
+                let mut bytes = string.into_bytes();
+                bytes.truncate(MAX_BUFFER_LENGTH as usize);
+                // assert!(
+                //     bytes.len() as u64 <= MAX_BUFFER_LENGTH,
+                //     "String length {} too long",
+                //     bytes.len()
+                // );
+                DataArg::In(bytes)
+            }
             Direction::Out => DataArg::Out(string.len() as u64),
         };
         (arg.into(), vec![])
@@ -261,7 +270,14 @@ impl GenerateArg for FilenameBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
-                DataArg::In(self.generate_filename(rand, ctx).into_bytes())
+                let mut bytes = self.generate_filename(rand, ctx).into_bytes();
+                bytes.truncate(MAX_BUFFER_LENGTH as usize);
+                // assert!(
+                //     bytes.len() as u64 <= MAX_BUFFER_LENGTH,
+                //     "Filename length {} too long",
+                //     bytes.len()
+                // );
+                DataArg::In(bytes)
             }
             Direction::Out => {
                 // We consider the filename length to be variable
@@ -292,7 +308,8 @@ impl GenerateArg for ByteBuffer {
         } else {
             rand_buffer_length(rand)
         };
-        assert!(len <= MAX_BUFFER_LENGTH);
+        let len = len.min(MAX_BUFFER_LENGTH);
+        // assert!(len <= MAX_BUFFER_LENGTH);
         let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
                 let data = iter::repeat_with(|| rand.below(256) as u8)
@@ -378,7 +395,11 @@ impl ResourceType {
     }
 
     /// Create a resource by loading the initializations from the corpus
-    fn load_resource<R: Rand>(&self, _rand: &mut R, _ctx: &mut Context) -> Option<(Arg, Vec<Call>)> {
+    fn load_resource<R: Rand>(
+        &self,
+        _rand: &mut R,
+        _ctx: &mut Context,
+    ) -> Option<(Arg, Vec<Call>)> {
         // TODO: Implement ResourceType::load_resource
         None
     }
@@ -523,7 +544,7 @@ fn rand_filename<R: Rand>(rand: &mut R, ctx: &Context) -> String {
     let mut dir = if binary(rand) {
         sample_from_iter(rand, ctx.filenames().iter())
             .cloned()
-            .unwrap_or(".".to_string())
+            .unwrap_or_else(|| ".".to_string())
     } else {
         ".".to_string()
     };
@@ -540,8 +561,7 @@ fn rand_filename<R: Rand>(rand: &mut R, ctx: &Context) -> String {
         dir.push_str("/..");
     }
 
-    let mut i = 1;
-    loop {
+    for i in 0usize.. {
         let mut name = format!("{}/file{}", dir, i);
         if one_of(rand, 100) {
             // Vary the length
@@ -553,8 +573,9 @@ fn rand_filename<R: Rand>(rand: &mut R, ctx: &Context) -> String {
         if !ctx.filenames().contains(&name) {
             return name;
         }
-        i += 1;
     }
+
+    unreachable!()
 }
 
 /// Generate a random filename length.
