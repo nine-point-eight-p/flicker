@@ -4,7 +4,7 @@ use libafl::inputs::{HasTargetBytes, Input};
 use libafl_bolts::{ownedref::OwnedSlice, HasLen};
 
 use ahash::RandomState;
-use log::info;
+use log::{debug, info};
 use postcard::to_stdvec;
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +36,7 @@ impl SyscallInput {
         &mut self.calls[idx]
     }
 
+    /// Take the inner value (calls).
     pub fn take(self) -> Vec<Call> {
         self.calls
     }
@@ -58,21 +59,26 @@ impl SyscallInput {
     /// Remove the call at the given index.
     pub fn remove(&mut self, idx: usize, metadata: &SyscallMetadata) {
         let call = self.calls.remove(idx);
+        debug!("[SyscallInput::remove] Removed call {:?}", call);
 
         // Remove any result arguments that use the result of the removed call
         if let Some(id) = call.result() {
+            debug!("[SyscallInput::remove] Removed result {:?}", id);
+
             let return_type = metadata
                 .find_number(call.number())
                 .unwrap()
                 .return_type()
                 .unwrap();
             debug_assert!(return_type.is_resource());
+
             // TODO: Check recursively for group args
             self.calls[idx..]
                 .iter_mut()
                 .flat_map(|c| c.args_mut())
                 .for_each(|arg| match arg {
                     Arg::ResultArg(inner) if inner.uses_result(id) => {
+                        debug!("[SyscallInput::remove] Removed result arg {:?}", inner);
                         *arg = return_type.default();
                     }
                     _ => {}
@@ -102,6 +108,7 @@ impl HasTargetBytes for SyscallInput {
     fn target_bytes(&self) -> OwnedSlice<u8> {
         let len = self.calls.len() as u32;
         info!("[SyscallInput::target_bytes] Input length: {} calls", len);
+        // println!("Calls: {:?}", self.calls);
 
         let mut bytes = to_stdvec(&len).unwrap();
         bytes.extend(self.calls.iter().flat_map(|c| c.to_exec_bytes()));
@@ -109,6 +116,7 @@ impl HasTargetBytes for SyscallInput {
             "[SyscallInput::target_bytes] Input size: {} bytes",
             bytes.len()
         );
+        // println!("Bytes: {:02x?}...", &bytes[..bytes.len().min(100)]);
 
         bytes.into()
     }

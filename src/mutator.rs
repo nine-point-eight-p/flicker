@@ -15,6 +15,8 @@ use libafl_bolts::{
     HasLen, Named,
 };
 
+use log::debug;
+
 use crate::program::context::Context;
 use crate::{generator::generate_call, program::syscall::MutateArg};
 use crate::{input::SyscallInput, program::metadata::SyscallMetadata};
@@ -47,6 +49,10 @@ where
         // Truncate calls to the max size
         input.splice(state.max_size(), iter::empty());
 
+        debug!(
+            "[SyscallSpliceMutator::mutate] Spliced calls from corpus entry {} at position {}",
+            id, pos
+        );
         Ok(MutationResult::Mutated)
     }
 }
@@ -91,6 +97,7 @@ where
         // Truncate calls to the max size
         input.splice(state.max_size(), iter::empty());
 
+        debug!("[SyscallInsertMutator::mutate] Inserted call at position {pos}");
         Ok(MutationResult::Mutated)
     }
 }
@@ -129,9 +136,9 @@ where
         if syscall.fields().len() == 0 {
             return Ok(MutationResult::Skipped);
         }
-        let field_pos = state.rand_mut().below(syscall.fields().len());
-        let field = &syscall.fields()[field_pos];
-        let arg = &mut call.args_mut()[field_pos];
+        let arg_pos = state.rand_mut().below(syscall.fields().len());
+        let field = &syscall.fields()[arg_pos];
+        let arg = &mut call.args_mut()[arg_pos];
         let calls = field.mutate(state.rand_mut(), &mut ctx, arg);
 
         // Insert new calls if any
@@ -140,6 +147,7 @@ where
         // Truncate calls to the max size
         input.splice(state.max_size(), iter::empty());
 
+        debug!("[SyscallRandMutator::mutate] Mutated arg {arg_pos} of call at position {call_pos}");
         Ok(MutationResult::Mutated)
     }
 }
@@ -168,6 +176,7 @@ where
         let pos = state.rand_mut().below(input.len());
         input.remove(pos, &self.metadata);
 
+        debug!("[SyscallRemoveMutator::mutate] Removed call at position {pos}",);
         Ok(MutationResult::Mutated)
     }
 }

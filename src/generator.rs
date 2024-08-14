@@ -8,7 +8,7 @@ use log::info;
 
 use crate::input::SyscallInput;
 use crate::program::{
-    call::{Arg, Call, ResultArg},
+    call::{Arg, Call},
     context::Context,
     syscall::{Field, GenerateArg, Syscall, Type},
 };
@@ -28,6 +28,10 @@ where
     S: HasRand + HasMetadata,
 {
     fn generate(&mut self, state: &mut S) -> Result<SyscallInput, Error> {
+        // Reset the context before generating new calls
+        self.context.reset();
+
+        // Generate calls until reaching the max size
         let rand = state.rand_mut();
         let mut calls = vec![];
         let mut size = 0;
@@ -38,10 +42,13 @@ where
             size += new_calls.len();
             calls.extend(new_calls);
         }
+
+        // Truncate calls if the size exceeds the max size.
+        // It is find to simply truncate, the reason is the same for SyscallInput::splice.
         if size > self.max_size {
-            // Just truncating is fine. The reason is the same for SyscallInput::splice.
             calls.truncate(self.max_size);
         }
+
         info!(
             "[SyscallGenerator::generate] Generated {} calls",
             calls.len()

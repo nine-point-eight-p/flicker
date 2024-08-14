@@ -12,7 +12,7 @@ use libafl_bolts::HasLen;
 
 use super::generation::{rand_filename_length, MAX_BUFFER_LENGTH};
 use super::{
-    ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, GenerateArg, IntType, PointerType,
+    ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, IntType, PointerType,
     ResourceType, StringBuffer, StructType, Type, UnionType,
 };
 use crate::generator::generate_arg;

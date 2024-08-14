@@ -4,6 +4,7 @@ use std::ops::Neg;
 use libafl_bolts::rands::Rand;
 
 use enum_dispatch::enum_dispatch;
+use log::debug;
 use uuid::Uuid;
 
 use super::{
@@ -371,6 +372,8 @@ impl ResourceType {
         let id = calls.last().unwrap().result().unwrap();
         let arg = ResultArg::from_result(id).into();
 
+        debug!("[ResourceType] Create resource, id: {}", id);
+
         Some((arg, calls))
     }
 
@@ -389,13 +392,18 @@ impl ResourceType {
             .map(|(id, _)| id)
             .collect();
         // Randomly choose one if there is any
-        (!results.is_empty())
-            .then(|| ResultArg::from_result(*results[rand.below(results.len())]).into())
+        if results.is_empty() {
+            return None;
+        }
+        let id = *results[rand.below(results.len())];
+        debug!("[ResourceType] Use existing resource, id: {}", id);
+        Some(ResultArg::from_result(id).into())
     }
 
     /// Choose a fallback value
     pub fn choose_fallback<R: Rand>(&self, rand: &mut R) -> Arg {
         let val = self.values[rand.below(self.values.len())];
+        debug!("[ResourceType] Choose fallback value: {}", val);
         ResultArg::from_literal(val).into()
     }
 }

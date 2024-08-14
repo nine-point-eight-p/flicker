@@ -100,4 +100,11 @@ impl Context {
         self.results.insert(id, ty.clone());
         id
     }
+
+    pub fn reset(&mut self) {
+        self.results.clear();
+        self.strings.clear();
+        self.filenames.clear();
+        self.generating_resource = false;
+    }
 }
