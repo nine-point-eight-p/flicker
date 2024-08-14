@@ -55,7 +55,7 @@ impl MutateArg for IntType {
 }
 
 impl MutateArg for FlagType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+    fn mutate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         let arg = arg.enum_downcast_mut::<ConstArg>().unwrap();
 
         loop {
@@ -69,7 +69,7 @@ impl MutateArg for FlagType {
 }
 
 impl MutateArg for ArrayType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+    fn mutate<R: Rand>(&self, _rand: &mut R, _ctx: &mut Context, _arg: &mut Arg) -> Vec<Call> {
         todo!("ArrayType::mutate")
     }
 }
@@ -136,7 +136,7 @@ impl MutateArg for FilenameBuffer {
 }
 
 impl MutateArg for ByteBuffer {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+    fn mutate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         let arg = arg.enum_downcast_mut::<DataArg>().unwrap();
 
         match arg {
@@ -152,13 +152,13 @@ impl MutateArg for ByteBuffer {
 }
 
 impl MutateArg for StructType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+    fn mutate<R: Rand>(&self, _rand: &mut R, _ctx: &mut Context, _arg: &mut Arg) -> Vec<Call> {
         todo!("StructType::mutate")
     }
 }
 
 impl MutateArg for UnionType {
-    fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
+    fn mutate<R: Rand>(&self, _rand: &mut R, _ctx: &mut Context, _arg: &mut Arg) -> Vec<Call> {
         todo!("UnionType::mutate")
     }
 }

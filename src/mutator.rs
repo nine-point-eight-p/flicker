@@ -21,9 +21,7 @@ use crate::program::context::Context;
 use crate::{generator::generate_call, program::syscall::MutateArg};
 use crate::{input::SyscallInput, program::metadata::SyscallMetadata};
 
-pub struct SyscallSpliceMutator {
-    metadata: SyscallMetadata,
-}
+pub struct SyscallSpliceMutator;
 
 impl<S> Mutator<SyscallInput, S> for SyscallSpliceMutator
 where
@@ -197,9 +195,7 @@ pub fn syscall_mutations(
     SyscallRemoveMutator
 ) {
     tuple_list!(
-        SyscallSpliceMutator {
-            metadata: metadata.clone()
-        },
+        SyscallSpliceMutator,
         SyscallInsertMutator {
             metadata: metadata.clone()
         },

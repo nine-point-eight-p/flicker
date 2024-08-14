@@ -53,7 +53,7 @@ impl IntType {
 }
 
 impl GenerateArg for IntType {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+    fn generate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context) -> (Arg, Vec<Call>) {
         let val = self.generate_impl(rand);
         (ConstArg::new(val as u64).into(), vec![])
     }
@@ -286,7 +286,7 @@ impl GenerateArg for FilenameBuffer {
 }
 
 impl GenerateArg for ByteBuffer {
-    fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+    fn generate<R: Rand>(&self, rand: &mut R, _ctx: &mut Context) -> (Arg, Vec<Call>) {
         let len = if let Some((min, max)) = self.range {
             rand.between(min as usize, max as usize) as u64
         } else {
@@ -378,7 +378,7 @@ impl ResourceType {
     }
 
     /// Create a resource by loading the initializations from the corpus
-    fn load_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> Option<(Arg, Vec<Call>)> {
+    fn load_resource<R: Rand>(&self, _rand: &mut R, _ctx: &mut Context) -> Option<(Arg, Vec<Call>)> {
         // TODO: Implement ResourceType::load_resource
         None
     }
