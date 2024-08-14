@@ -3,7 +3,7 @@ use enum_downcast::EnumDowncast;
 use enum_index::EnumIndex;
 use postcard::to_stdvec;
 use serde::{Deserialize, Serialize};
-use syscall2struct_helpers::Pointer;
+use syscall2struct_helpers::{Pointer, Result};
 use uuid::Uuid;
 
 /// Serialize to testcase bytes for execution on the target.
@@ -193,18 +193,24 @@ impl ResultArg {
     }
 
     pub fn uses_result(&self, id: Uuid) -> bool {
-        match self {
-            ResultArg::Ref(other_id) => id == *other_id,
-            _ => false,
-        }
+        matches!(self, ResultArg::Ref(self_id) if id == *self_id)
     }
 }
 
 impl ToExecBytes for ResultArg {
     fn to_exec_bytes(&self) -> Vec<u8> {
-        match &self {
+        // HACK: This is the similar to `PointerArg` serialization.
+        let idx = match &self {
+            ResultArg::Ref(_) => Result::Ref(Uuid::default()).enum_index() as u32,
+            ResultArg::Literal(_) => Result::Value(0).enum_index() as u32,
+        };
+        let idx = to_stdvec(&idx).unwrap();
+
+        let data = match &self {
             ResultArg::Ref(id) => to_stdvec(id).unwrap(),
             ResultArg::Literal(literal) => to_stdvec(literal).unwrap(),
-        }
+        };
+
+        [idx, data].concat()
     }
 }

@@ -6,7 +6,6 @@ use libafl_bolts::rands::Rand;
 use enum_dispatch::enum_dispatch;
 use uuid::Uuid;
 
-use super::utility::*;
 use super::{
     ArrayType, ByteBuffer, Direction, Field, FilenameBuffer, FlagType, IntType, PointerType,
     ResourceType, StringBuffer, StructType, UnionType,
@@ -16,13 +15,19 @@ use crate::program::{
     call::{Arg, Call, ConstArg, DataArg, GroupArg, PointerArg, ResultArg},
     context::Context,
 };
+use crate::utility::*;
+
+pub const MAX_ARRAY_LENGTH: u64 = 10;
+pub const MAX_BUFFER_LENGTH: u64 = 0x1000;
 
 #[enum_dispatch]
 pub trait GenerateArg {
     /// Generate a new argument for this field type
+    #[must_use]
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>);
 
     /// Generate the default value for this field type
+    #[must_use]
     fn default(&self) -> Arg;
 }
 
@@ -206,7 +211,7 @@ impl StringBuffer {
 impl GenerateArg for StringBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         let string = self.generate_string(rand, ctx);
-        let arg = match self.dir {
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => DataArg::In(string.into_bytes()),
             Direction::Out => DataArg::Out(string.len() as u64),
         };
@@ -214,7 +219,7 @@ impl GenerateArg for StringBuffer {
     }
 
     fn default(&self) -> Arg {
-        let arg = match self.dir {
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
                 if self.values.len() == 1 {
                     DataArg::In(self.values[0].clone().into_bytes())
@@ -253,7 +258,7 @@ impl FilenameBuffer {
 
 impl GenerateArg for FilenameBuffer {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let arg = match self.dir {
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
                 DataArg::In(self.generate_filename(rand, ctx).into_bytes())
             }
@@ -271,7 +276,7 @@ impl GenerateArg for FilenameBuffer {
     }
 
     fn default(&self) -> Arg {
-        let arg = match self.dir {
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => DataArg::In(Vec::default()),
             Direction::Out => DataArg::Out(u64::default()),
         };
@@ -286,7 +291,8 @@ impl GenerateArg for ByteBuffer {
         } else {
             rand_buffer_length(rand)
         };
-        let arg = match self.dir {
+        assert!(len <= MAX_BUFFER_LENGTH);
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
                 let data = iter::repeat_with(|| rand.below(256) as u8)
                     .take(len as usize)
@@ -299,7 +305,7 @@ impl GenerateArg for ByteBuffer {
     }
 
     fn default(&self) -> Arg {
-        let arg = match self.dir {
+        let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
                 if !is_var_len(self.range) {
                     DataArg::In(vec![0; self.range.unwrap().0 as usize])
@@ -340,30 +346,38 @@ impl GenerateArg for UnionType {
 
 impl ResourceType {
     /// Create a new resource by generating a syscall
-    fn create_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
+    fn create_resource<R: Rand>(
+        &self,
+        rand: &mut R,
+        ctx: &mut Context,
+    ) -> Option<(Arg, Vec<Call>)> {
         // Find a syscall that creates this resource
-        let resource_creators = ctx
+        let resource_creators: Vec<_> = ctx
             .syscalls()
             .iter()
             .filter(|s| {
                 s.return_type()
                     .is_some_and(|ty| ty.is_compatible_resource(&self.name))
             })
-            .map(|s| s.clone());
-        let syscall = rand
-            .choose(resource_creators)
-            .expect("No syscall to create resource");
+            .collect();
+        if resource_creators.is_empty() {
+            return None;
+        }
+        let idx = rand.below(resource_creators.len());
+        let syscall = resource_creators[idx].clone();
 
         // Generate the syscall and the argument
         let calls = generate_call(rand, ctx, &syscall);
-        let arg = ResultArg::from_result(calls.last().unwrap().result().unwrap()).into();
+        let id = calls.last().unwrap().result().unwrap();
+        let arg = ResultArg::from_result(id).into();
 
-        (arg, calls)
+        Some((arg, calls))
     }
 
     /// Create a resource by loading the initializations from the corpus
     fn load_resource<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> Option<(Arg, Vec<Call>)> {
-        None // TODO: Implement ResourceType::load_resource
+        // TODO: Implement ResourceType::load_resource
+        None
     }
 
     /// Use an existing resource
@@ -378,11 +392,18 @@ impl ResourceType {
         (!results.is_empty())
             .then(|| ResultArg::from_result(*results[rand.below(results.len())]).into())
     }
+
+    /// Choose a fallback value
+    pub fn choose_fallback<R: Rand>(&self, rand: &mut R) -> Arg {
+        let val = self.values[rand.below(self.values.len())];
+        ResultArg::from_literal(val).into()
+    }
 }
 
 impl GenerateArg for ResourceType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
         // Check if we can recurse
+        let old_generating_resource = ctx.generating_resource;
         let can_recurse = if ctx.generating_resource {
             false
         } else {
@@ -393,6 +414,7 @@ impl GenerateArg for ResourceType {
         // Use an existing resource with a high probability
         if can_recurse && n_out_of(rand, 4, 5) || !can_recurse && n_out_of(rand, 19, 20) {
             if let Some(arg) = self.use_existing_resource(rand, ctx) {
+                ctx.generating_resource = old_generating_resource;
                 return (arg, vec![]);
             }
         }
@@ -400,16 +422,20 @@ impl GenerateArg for ResourceType {
         if can_recurse {
             if one_of(rand, 4) {
                 if let Some((arg, calls)) = self.load_resource(rand, ctx) {
+                    ctx.generating_resource = old_generating_resource;
                     return (arg, calls);
                 }
             }
             if n_out_of(rand, 4, 5) {
-                return self.create_resource(rand, ctx);
+                if let Some((arg, calls)) = self.create_resource(rand, ctx) {
+                    ctx.generating_resource = old_generating_resource;
+                    return (arg, calls);
+                }
             }
         }
         // Fallback: use special values
-        let val = self.values[rand.below(self.values.len())];
-        (ResultArg::from_literal(val).into(), vec![])
+        ctx.generating_resource = old_generating_resource;
+        (self.choose_fallback(rand), vec![])
     }
 
     fn default(&self) -> Arg {
@@ -462,7 +488,6 @@ fn rand_int<R: Rand>(rand: &mut R, bits: u8) -> u64 {
 
 /// Generate a random array length.
 fn rand_array_length<R: Rand>(rand: &mut R) -> u64 {
-    const MAX_ARRAY_LENGTH: u64 = 10;
     let n = MAX_ARRAY_LENGTH + 1;
     (biased_rand(rand, n as usize, 10) + 1) % n
 }
@@ -544,7 +569,7 @@ fn rand_buffer_length<R: Rand>(rand: &mut R) -> u64 {
     if n_out_of(rand, 50, 56) {
         rand.below(256) as u64
     } else if n_out_of(rand, 5, 6) {
-        0x1000
+        MAX_BUFFER_LENGTH
     } else {
         0
     }

@@ -1,6 +1,6 @@
 use libafl::{
     inputs::{BytesInput, HasMutatorBytes},
-    mutators::{havoc_mutations_no_crossover, HavocMutationsNoCrossoverType},
+    mutators::havoc_mutations_no_crossover,
     prelude::{MutationResult, MutatorsTuple},
     state::{HasRand, NopState},
 };
@@ -10,18 +10,22 @@ use enum_dispatch::enum_dispatch;
 use enum_downcast::EnumDowncast;
 use libafl_bolts::HasLen;
 
-use super::generation::rand_filename_length;
-use super::utility::*;
+use super::generation::{rand_filename_length, MAX_BUFFER_LENGTH};
 use super::{
     ArrayType, ByteBuffer, Field, FilenameBuffer, FlagType, GenerateArg, IntType, PointerType,
-    ResourceType, StringBuffer, StructType, UnionType,
+    ResourceType, StringBuffer, StructType, Type, UnionType,
 };
-use crate::program::call::{Arg, Call, ConstArg, DataArg};
-use crate::program::context::Context;
+use crate::generator::generate_arg;
+use crate::program::{
+    call::{Arg, Call, ConstArg, DataArg, PointerArg},
+    context::Context,
+};
+use crate::utility::*;
 
 #[enum_dispatch]
 pub trait MutateArg {
     /// Mutate an existing argument for this field type
+    #[must_use = "The newly generated calls during mutation should be put back to original testcase"]
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call>;
 }
 
@@ -72,10 +76,18 @@ impl MutateArg for ArrayType {
 
 impl MutateArg for PointerType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
-        // Simply regenerate
-        let (new_arg, new_calls) = self.generate(rand, ctx);
-        *arg = new_arg;
-        new_calls
+        let pointer_arg = arg.enum_downcast_mut::<PointerArg>().unwrap();
+
+        let regenerate = one_of(rand, 3);
+        match pointer_arg {
+            PointerArg::Data(data) if !regenerate => self.elem.mutate(rand, ctx, data), // Mutate inner
+            _ => {
+                // Regenerate
+                let (new_arg, new_calls) = generate_arg(rand, ctx, &Type::Pointer(self.clone()));
+                *arg = new_arg;
+                new_calls
+            }
+        }
     }
 }
 
@@ -90,7 +102,7 @@ impl MutateArg for StringBuffer {
                     *data = self.generate_string(rand, ctx).into_bytes();
                 } else {
                     // Mutate
-                    mutate_bytes(data);
+                    mutate_bytes(data, None);
                 }
             }
             DataArg::Out(len) => {
@@ -128,7 +140,10 @@ impl MutateArg for ByteBuffer {
         let arg = arg.enum_downcast_mut::<DataArg>().unwrap();
 
         match arg {
-            DataArg::In(data) => mutate_bytes(data),
+            DataArg::In(data) => {
+                mutate_bytes(data, self.range);
+                assert!(data.len() as u64 <= MAX_BUFFER_LENGTH);
+            }
             DataArg::Out(len) => mutate_buffer_length(rand, len, self.range),
         }
 
@@ -151,14 +166,14 @@ impl MutateArg for UnionType {
 impl MutateArg for ResourceType {
     fn mutate<R: Rand>(&self, rand: &mut R, ctx: &mut Context, arg: &mut Arg) -> Vec<Call> {
         // TODO: What to do with the old resource?
-        let (new_arg, new_calls) = self.generate(rand, ctx);
+        let (new_arg, new_calls) = generate_arg(rand, ctx, &Type::Resource(self.clone()));
         *arg = new_arg;
         new_calls
     }
 }
 
 /// Mutate some bytes with mutators from [`libafl::mutators::havoc_mutations_no_crossover`].
-fn mutate_bytes(bytes: &mut [u8]) {
+fn mutate_bytes(bytes: &mut Vec<u8>, range: Option<(u64, u64)>) {
     // TODO: Maybe use `static` to avoid re-creating the mutators and state every time
     let mut mutators = havoc_mutations_no_crossover();
     let mut nop_state = NopState::<BytesInput>::new();
@@ -174,12 +189,26 @@ fn mutate_bytes(bytes: &mut [u8]) {
         }
     }
 
+    // Resize if it can not fitted into the range
+    if let Some((min, max)) = range {
+        let len = input.len() as u64;
+        if len < min {
+            input.resize(min as usize, 0);
+        } else if len > max {
+            input.resize(max as usize, 0);
+        }
+    }
+    if input.len() > MAX_BUFFER_LENGTH as usize {
+        input.resize(MAX_BUFFER_LENGTH as usize, 0);
+    }
+
+    bytes.resize(input.len(), 0);
     bytes.copy_from_slice(input.bytes());
 }
 
 /// Mutate the length of a buffer.
 fn mutate_buffer_length<R: Rand>(rand: &mut R, old_len: &mut u64, range: Option<(u64, u64)>) {
-    let (min, max) = range.unwrap_or((0, 0x20000)); // max size: 128KB
+    let (min, max) = range.unwrap_or((0, MAX_BUFFER_LENGTH));
     let mut new_len = *old_len;
 
     while new_len == *old_len {

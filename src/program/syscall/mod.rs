@@ -1,13 +1,13 @@
 mod generation;
 mod mutation;
-mod utility;
 
 use libafl_bolts::rands::Rand;
 
+use enum_common_fields::EnumCommonFields;
 use enum_dispatch::enum_dispatch;
 use syzlang_parser::parser::{
-    ArgIdent, ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType,
-    Identifier, Parsed, Resource, Struct, Union, Value,
+    ArgOpt, ArgType, Argument, Direction as ParserDirection, Flag, Function, IdentType, Identifier,
+    Parsed, Resource, Struct, Union, Value,
 };
 
 use super::call::{Arg, Call};
@@ -73,14 +73,14 @@ impl Field {
 #[enum_dispatch(GenerateArg, MutateArg)]
 #[derive(Debug, Clone)]
 pub enum Type {
-    IntType,
-    FlagType,
-    ArrayType,
-    PointerType,
-    BufferType,
-    StructType,
-    UnionType,
-    ResourceType,
+    Int(IntType),
+    Flag(FlagType),
+    Array(ArrayType),
+    Pointer(PointerType),
+    Buffer(BufferType),
+    Struct(StructType),
+    Union(UnionType),
+    Resource(ResourceType),
 }
 
 impl Type {
@@ -106,18 +106,20 @@ impl Type {
                 Some(BufferType::from_argument(argument, ctx).into())
             }
             ArgType::Ident(ident) => {
+                let attr = TypeAttr::from_opts(&argument.opts);
                 let ident_type = ctx
                     .identifier_to_ident_type(&ident)
                     .expect("Unknown ident type");
                 let ty = match ident_type {
                     IdentType::Struct => {
-                        StructType::from_struct(ctx.get_struct(&ident).unwrap(), ctx).into()
+                        StructType::from_struct(ctx.get_struct(&ident).unwrap(), ctx, attr).into()
                     }
                     IdentType::Union => {
-                        UnionType::from_union(ctx.get_union(&ident).unwrap(), ctx).into()
+                        UnionType::from_union(ctx.get_union(&ident).unwrap(), ctx, attr).into()
                     }
                     IdentType::Resource => {
-                        ResourceType::from_resource(ctx.get_resource(&ident).unwrap(), ctx).into()
+                        ResourceType::from_resource(ctx.get_resource(&ident).unwrap(), ctx, attr)
+                            .into()
                     }
                     _ => unimplemented!("Unsupported ident type: {:?}", ident_type),
                 };
@@ -129,23 +131,36 @@ impl Type {
     }
 
     pub fn is_integer(&self) -> bool {
-        matches!(self, Type::IntType(_) | Type::FlagType(_))
+        matches!(self, Self::Int(_) | Self::Flag(_))
     }
 
     pub fn is_string(&self) -> bool {
-        matches!(self, Type::BufferType(BufferType::String(_)))
+        matches!(self, Self::Buffer(BufferType::String(_)))
     }
 
     pub fn is_filename(&self) -> bool {
-        matches!(self, Type::BufferType(BufferType::Filename(_)))
+        matches!(self, Self::Buffer(BufferType::Filename(_)))
     }
 
     pub fn is_resource(&self) -> bool {
-        matches!(self, Type::ResourceType(_))
+        matches!(self, Self::Resource(_))
     }
 
     pub fn is_compatible_resource(&self, name: &str) -> bool {
-        matches!(self, Type::ResourceType(inner) if inner.name == name)
+        matches!(self, Self::Resource(inner) if inner.name == name)
+    }
+
+    pub fn attr(&self) -> &TypeAttr {
+        match self {
+            Self::Int(inner) => &inner.attr,
+            Self::Flag(inner) => &inner.attr,
+            Self::Array(inner) => &inner.attr,
+            Self::Pointer(inner) => &inner.attr,
+            Self::Buffer(inner) => inner.attr(),
+            Self::Struct(inner) => &inner.attr,
+            Self::Union(inner) => &inner.attr,
+            Self::Resource(inner) => &inner.attr,
+        }
     }
 }
 
@@ -167,13 +182,29 @@ impl From<ParserDirection> for Direction {
 }
 
 #[derive(Debug, Clone)]
-struct IntType {
+pub struct TypeAttr {
+    pub dir: Direction,
+    pub optional: bool,
+}
+
+impl TypeAttr {
+    fn from_opts(arg_opts: &[ArgOpt]) -> Self {
+        let dir = find_dir(arg_opts);
+        let optional = arg_opts.iter().any(|opt| matches!(opt, ArgOpt::Opt));
+        Self { dir, optional }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IntType {
+    attr: TypeAttr,
     bits: u8,
     range: Option<(u64, u64)>,
 }
 
 impl IntType {
     fn from_argument(argument: &Argument) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let arg_type = argument.arg_type();
         let bits = match argument.argtype {
             ArgType::Int8 | ArgType::Int16 | ArgType::Int32 | ArgType::Int64 | ArgType::Intptr => {
@@ -182,69 +213,76 @@ impl IntType {
             _ => unreachable!("Invalid argument type for integer"),
         };
         let range = find_range(&argument.opts);
-        Self { bits, range }
+        Self { attr, bits, range }
     }
 }
 
 #[derive(Debug, Clone)]
-struct FlagType {
+pub struct FlagType {
+    attr: TypeAttr,
     values: Vec<u64>,
     is_bitmask: bool,
 }
 
 impl FlagType {
-    fn from_flag(flag: &Flag, ctx: &Parsed) -> Self {
+    fn from_flag(flag: &Flag, ctx: &Parsed, attr: TypeAttr) -> Self {
         let mut values: Vec<u64> = flag
             .args()
             .map(|arg| value_to_u64_flatten(arg, ctx).unwrap())
             .collect();
         values.sort();
         let is_bitmask = is_bitmask(&values);
-        Self { values, is_bitmask }
+        Self {
+            attr,
+            values,
+            is_bitmask,
+        }
     }
 
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
         let flag_name = find_ident(&argument.opts).expect("No flag name for flag type");
         let flag = ctx.get_flag(flag_name).unwrap();
-        Self::from_flag(flag, ctx)
+        let attr = TypeAttr::from_opts(&argument.opts);
+        Self::from_flag(flag, ctx, attr)
     }
 }
 
 #[derive(Debug, Clone)]
-struct ArrayType {
+pub struct ArrayType {
+    attr: TypeAttr,
     elem: Box<Type>,
     range: Option<(u64, u64)>,
-    dir: Direction,
 }
 
 impl ArrayType {
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let subarg = ArgOpt::get_subarg(&argument.opts).unwrap();
         let elem = Box::new(Type::from_argument(subarg, ctx).unwrap());
         let range = find_length(&argument.opts);
-        let dir = find_dir(&argument.opts);
-        Self { elem, range, dir }
+        Self { attr, elem, range }
     }
 }
 
 #[derive(Debug, Clone)]
-struct PointerType {
+pub struct PointerType {
+    attr: TypeAttr,
     elem: Box<Type>,
-    dir: Direction,
 }
 
 impl PointerType {
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let subarg = ArgOpt::get_subarg(&argument.opts).expect("No underlying type for pointer");
         let elem = Box::new(Type::from_argument(subarg, ctx).unwrap());
-        let dir = find_dir(&argument.opts);
-        Self { elem, dir }
+        Self { attr, elem }
     }
 }
 
 #[enum_dispatch(GenerateArg, MutateArg)]
-#[derive(Debug, Clone)]
-enum BufferType {
+#[derive(Debug, Clone, EnumCommonFields)]
+#[common_field(attr: TypeAttr)]
+pub enum BufferType {
     String(StringBuffer),
     Filename(FilenameBuffer),
     Byte(ByteBuffer),
@@ -277,14 +315,15 @@ impl BufferType {
 }
 
 #[derive(Debug, Clone)]
-struct StringBuffer {
+pub struct StringBuffer {
+    attr: TypeAttr,
     values: Vec<String>,
     no_zero: bool,
-    dir: Direction,
 }
 
 impl StringBuffer {
     fn from_argument(argument: &Argument, ctx: &Parsed) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let values = if let Some(value) = find_string_value(&argument.opts) {
             // Use the const values if provided in the argument
             vec![value]
@@ -302,52 +341,53 @@ impl StringBuffer {
             }
         };
         let no_zero = argument.argtype == ArgType::StringNoz;
-        let dir = find_dir(&argument.opts);
 
         Self {
+            attr,
             values,
             no_zero,
-            dir,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-struct FilenameBuffer {
+pub struct FilenameBuffer {
+    attr: TypeAttr,
     no_zero: bool,
-    dir: Direction,
 }
 
 impl FilenameBuffer {
     fn from_argument(argument: &Argument) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let no_zero = argument.argtype == ArgType::StringNoz;
-        let dir = find_dir(&argument.opts);
-        Self { no_zero, dir }
+        Self { attr, no_zero }
     }
 }
 
 #[derive(Debug, Clone)]
-struct ByteBuffer {
+pub struct ByteBuffer {
+    attr: TypeAttr,
     range: Option<(u64, u64)>,
-    dir: Direction,
 }
 
 impl ByteBuffer {
     fn from_argument(argument: &Argument) -> Self {
+        let attr = TypeAttr::from_opts(&argument.opts);
         let range = find_length(&argument.opts);
-        let dir = find_dir(&argument.opts);
-        Self { range, dir }
+        Self { attr, range }
     }
 }
 
 #[derive(Debug, Clone)]
-struct StructType {
+pub struct StructType {
+    attr: TypeAttr,
     fields: Vec<Field>,
 }
 
 impl StructType {
-    fn from_struct(st: &Struct, ctx: &Parsed) -> Self {
+    fn from_struct(st: &Struct, ctx: &Parsed, attr: TypeAttr) -> Self {
         Self {
+            attr,
             fields: st
                 .args()
                 .map(|arg| Field::from_argument(arg, ctx))
@@ -357,13 +397,15 @@ impl StructType {
 }
 
 #[derive(Debug, Clone)]
-struct UnionType {
+pub struct UnionType {
+    attr: TypeAttr,
     fields: Vec<Field>,
 }
 
 impl UnionType {
-    pub fn from_union(union: &Union, ctx: &Parsed) -> Self {
+    fn from_union(union: &Union, ctx: &Parsed, attr: TypeAttr) -> Self {
         Self {
+            attr,
             fields: union
                 .args()
                 .map(|arg| Field::from_argument(arg, ctx))
@@ -373,13 +415,14 @@ impl UnionType {
 }
 
 #[derive(Debug, Clone)]
-struct ResourceType {
+pub struct ResourceType {
+    attr: TypeAttr,
     name: String,
     values: Vec<u64>,
 }
 
 impl ResourceType {
-    fn from_resource(resource: &Resource, ctx: &Parsed) -> Self {
+    fn from_resource(resource: &Resource, ctx: &Parsed, attr: TypeAttr) -> Self {
         let values: Vec<u64> = resource
             .consts
             .iter()
@@ -390,6 +433,7 @@ impl ResourceType {
             "Resource type has to provide at least one value as default"
         );
         Self {
+            attr,
             name: resource.name.name.clone(),
             values,
         }

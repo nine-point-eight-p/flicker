@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::iter;
 
 use libafl::{
     corpus::Corpus,
@@ -43,10 +44,8 @@ where
         // Replace input calls after the position with the calls from the corpus entry
         input.splice(pos, other.take().into_iter());
 
-        // Remove calls outside the max size
-        for idx in (state.max_size()..input.len()).rev() {
-            input.remove(idx, &self.metadata);
-        }
+        // Truncate calls to the max size
+        input.splice(state.max_size(), iter::empty());
 
         Ok(MutationResult::Mutated)
     }
@@ -89,10 +88,8 @@ where
         // Insert new calls
         input.insert(pos, new_calls.into_iter());
 
-        // Remove calls outside the max size
-        for idx in (state.max_size()..input.len()).rev() {
-            input.remove(idx, &self.metadata);
-        }
+        // Truncate calls to the max size
+        input.splice(state.max_size(), iter::empty());
 
         Ok(MutationResult::Mutated)
     }
@@ -111,7 +108,7 @@ pub struct SyscallRandMutator {
 
 impl<S> Mutator<SyscallInput, S> for SyscallRandMutator
 where
-    S: HasRand,
+    S: HasRand + HasMaxSize,
 {
     /// Mutate a random argument of a random syscall
     fn mutate(&mut self, state: &mut S, input: &mut SyscallInput) -> Result<MutationResult, Error> {
@@ -120,19 +117,28 @@ where
         }
 
         // Choose a random call to mutate
-        let pos = state.rand_mut().below(input.len());
-        let mut ctx = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
-        let call = input.get_mut(pos);
+        let call_pos = state.rand_mut().below(input.len());
+        let mut ctx = Context::with_calls(self.metadata.clone(), &input.calls()[..call_pos]);
+        let call = input.get_mut(call_pos);
         let syscall = self
             .metadata
             .find_number(call.number())
             .expect("Syscall not found");
 
         // Choose a random argument to mutate
-        let pos = state.rand_mut().below(syscall.fields().len());
-        let field = &syscall.fields()[pos];
-        let arg = &mut call.args_mut()[pos];
-        field.mutate(state.rand_mut(), &mut ctx, arg);
+        if syscall.fields().len() == 0 {
+            return Ok(MutationResult::Skipped);
+        }
+        let field_pos = state.rand_mut().below(syscall.fields().len());
+        let field = &syscall.fields()[field_pos];
+        let arg = &mut call.args_mut()[field_pos];
+        let calls = field.mutate(state.rand_mut(), &mut ctx, arg);
+
+        // Insert new calls if any
+        input.insert(call_pos, calls.into_iter());
+
+        // Truncate calls to the max size
+        input.splice(state.max_size(), iter::empty());
 
         Ok(MutationResult::Mutated)
     }

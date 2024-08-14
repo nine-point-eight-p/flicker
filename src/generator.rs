@@ -3,14 +3,16 @@ use std::marker::PhantomData;
 use libafl::HasMetadata;
 use libafl::{generators::Generator, state::HasRand, Error};
 use libafl_bolts::rands::Rand;
+
 use log::info;
 
 use crate::input::SyscallInput;
 use crate::program::{
-    call::{Arg, Call},
+    call::{Arg, Call, ResultArg},
     context::Context,
     syscall::{Field, GenerateArg, Syscall, Type},
 };
+use crate::utility::binary;
 
 pub struct SyscallGenerator<S>
 where
@@ -35,6 +37,10 @@ where
             let new_calls = generate_call(rand, &mut self.context, &syscall);
             size += new_calls.len();
             calls.extend(new_calls);
+        }
+        if size > self.max_size {
+            // Just truncating is fine. The reason is the same for SyscallInput::splice.
+            calls.truncate(self.max_size);
         }
         info!(
             "[SyscallGenerator::generate] Generated {} calls",
@@ -82,5 +88,14 @@ pub fn generate_args<R: Rand>(
 }
 
 pub fn generate_arg<R: Rand>(rand: &mut R, ctx: &mut Context, ty: &Type) -> (Arg, Vec<Call>) {
-    ty.generate(rand, ctx)
+    if ty.attr().optional && binary(rand) {
+        // Use default values for optional fields with 1/2 probability
+        let arg = match ty {
+            Type::Resource(res) => res.choose_fallback(rand),
+            other => other.default(),
+        };
+        (arg, vec![])
+    } else {
+        ty.generate(rand, ctx)
+    }
 }

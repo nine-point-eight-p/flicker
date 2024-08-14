@@ -193,7 +193,7 @@ pub fn fuzz(opt: FuzzerOption) {
             } else {
                 println!("Failed to import initial inputs, try to generate");
                 let context = Context::new(metadata.clone());
-                let mut generator = SyscallGenerator::new(30, context);
+                let mut generator = SyscallGenerator::new(max_calls, context);
                 state
                     .generate_initial_inputs(
                         &mut fuzzer,
