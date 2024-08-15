@@ -8,6 +8,7 @@ pub const ARCH: Arch = Arch::Riscv64;
 #[cfg(feature = "x86_64")]
 pub const ARCH: Arch = Arch::X86_64;
 
+/// Metadata for syscalls.
 #[derive(Debug, Clone)]
 pub struct SyscallMetadata(Vec<Syscall>);
 

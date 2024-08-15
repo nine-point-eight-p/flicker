@@ -1,8 +1,26 @@
-use clap::Parser;
+//! Command line interface for flicker
+
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
+#[command(version, about)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Run the fuzzer
+    Fuzz(FuzzOption),
+    /// Reproduce a crash
+    Reproduce(ReproduceOption),
+}
+
+/// Fuzzing options
+#[derive(Args)]
 #[clap(trailing_var_arg = true)]
-pub struct FuzzerOption {
+pub struct FuzzOption {
     /// Time limit for each run of the target
     #[arg(short, long, default_value_t = 3)]
     pub timeout: u64,
@@ -28,22 +46,37 @@ pub struct FuzzerOption {
     pub crash: String,
 
     /// Path to the description file
-    #[clap(long)]
+    #[arg(long)]
     pub desc: String,
 
     /// Path to the constants file
-    #[clap(long)]
+    #[arg(long)]
     pub r#const: String,
 
     /// Max number of calls per run
-    #[clap(long, default_value = "30")]
+    #[arg(long, default_value = "30")]
     pub max_calls: usize,
 
     /// Arguments passed to Qemu
-    #[clap(num_args = 0.., allow_hyphen_values = true)]
+    #[arg(num_args = 0.., allow_hyphen_values = true)]
     pub run_args: Vec<String>,
 }
 
-pub fn parse() -> FuzzerOption {
-    FuzzerOption::parse()
+/// Reproduction options
+#[derive(Args)]
+pub struct ReproduceOption {
+    /// Path to the testcase file
+    pub testcase: String,
+
+    /// Time limit for each run of the target
+    #[arg(short, long, default_value_t = 3)]
+    pub timeout: u64,
+
+    /// Arguments passed to Qemu
+    #[arg(num_args = 0.., allow_hyphen_values = true)]
+    pub run_args: Vec<String>,
+}
+
+pub fn parse() -> Cli {
+    Cli::parse()
 }

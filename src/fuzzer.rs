@@ -1,5 +1,5 @@
-//! A fuzzer using qemu in systemmode for binary-only coverage of kernels
-//!
+//! A binary-only kernel fuzzer using LibAFL QEMU in systemmode
+
 use core::{ptr::addr_of_mut, time::Duration};
 use std::{env, path::PathBuf};
 
@@ -43,10 +43,21 @@ use flicker::{
     program::{context::Context, metadata::SyscallMetadata},
 };
 
-use crate::option::FuzzerOption;
+use crate::cli::FuzzOption;
 
-pub fn fuzz(opt: FuzzerOption) {
-    let FuzzerOption {
+// /// Metadata for testcases for reproduction.
+// #[derive(Debug, Clone, Serialize, Deserialize, SerdeAny)]
+// pub struct TestcaseMetadata {
+//     /// Path to the description file
+//     desc: String,
+//     /// Path to the constants file
+//     r#const: String,
+//     /// Arguments passed to Qemu
+//     run_args: Vec<String>,
+// }
+
+pub fn fuzz(opt: FuzzOption) {
+    let FuzzOption {
         timeout,
         port: broker_port,
         cores,
@@ -63,9 +74,15 @@ pub fn fuzz(opt: FuzzerOption) {
     let cores = Cores::from_cmdline(&cores).unwrap();
     let init_corpus_dir = PathBuf::from(init_corpus);
     let gen_corpus_dir = PathBuf::from(gen_corpus);
-    let crash_dir = PathBuf::from(crash);
-    let desc_file = PathBuf::from(desc);
-    let const_file = PathBuf::from(r#const);
+    let crash_dir = PathBuf::from(crash.clone());
+    let desc_file = PathBuf::from(desc.clone());
+    let const_file = PathBuf::from(r#const.clone());
+    // TODO: Add cli options to testcases as metadata
+    // let testcase_metadata = TestcaseMetadata {
+    //     desc,
+    //     r#const,
+    //     run_args,
+    // };
 
     // Usually qemu is initialized with `env::args().collect()`,
     // where the first argument is the path of the executable.
@@ -73,7 +90,7 @@ pub fn fuzz(opt: FuzzerOption) {
     // an empty string as a placeholder.
     run_args.insert(0, String::new());
 
-    let metadata = SyscallMetadata::from_parsed(parse(&desc_file, &const_file));
+    let syscall_metadata = SyscallMetadata::from_parsed(parse(&desc_file, &const_file));
 
     let mut run_client = |state: Option<_>, mut mgr, _core_id| {
         // Initialize QEMU
@@ -159,8 +176,8 @@ pub fn fuzz(opt: FuzzerOption) {
             tuple_list!(QemuEdgeCoverageHelper::default()),
         );
 
-        // Setup an havoc mutator with a mutational stage
-        let mutator = StdScheduledMutator::new(syscall_mutations(metadata.clone()));
+        // Setup a syscall mutator with a mutational stage
+        let mutator = StdScheduledMutator::new(syscall_mutations(syscall_metadata.clone()));
         let calibration_feedback = MaxMapFeedback::new(&edges_observer);
         let mut stages = tuple_list!(
             StdMutationalStage::new(mutator),
@@ -192,7 +209,7 @@ pub fn fuzz(opt: FuzzerOption) {
                 println!("We imported {} inputs from disk.", state.corpus().count());
             } else {
                 println!("Failed to import initial inputs, try to generate");
-                let context = Context::new(metadata.clone());
+                let context = Context::new(syscall_metadata.clone());
                 let mut generator = SyscallGenerator::new(max_calls, context);
                 state
                     .generate_initial_inputs(

@@ -1,18 +1,25 @@
 #[cfg(target_os = "linux")]
-use env_logger;
-
-#[cfg(target_os = "linux")]
 mod fuzzer;
 
 #[cfg(target_os = "linux")]
-mod option;
+mod runner;
+
+#[cfg(target_os = "linux")]
+mod cli;
 
 #[cfg(target_os = "linux")]
 pub fn main() {
-    let options = option::parse();
+    use cli::Commands;
+    use env_logger;
+
+    let cli = cli::parse();
 
     env_logger::init();
-    fuzzer::fuzz(options);
+
+    match cli.command {
+        Commands::Fuzz(options) => fuzzer::fuzz(options),
+        Commands::Reproduce(options) => runner::reproduce(options),
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
