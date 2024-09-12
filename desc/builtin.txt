@@ -1,0 +1,16 @@
+type bool8	int8[0:1]
+type bool16	int16[0:1]
+type bool32	int32[0:1]
+type bool64	int64[0:1]
+type boolptr	intptr[0:1]
+
+type fileoff[BASE] BASE
+
+type filename string[filename]
+
+type buffer[DIR] ptr[DIR, array[int8]]
+
+type optional[T] [
+	val	T
+	void	void
+] [varlen]

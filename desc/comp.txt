@@ -1,0 +1,148 @@
+# Syscall from https://github.com/oscomp/testsuits-for-oskernel/blob/0de5d9b11cd3b5d7f75436460bd826be5e989a5c/oscomp_syscalls.md
+# Based on https://github.com/google/syzkaller/blob/master/sys/linux/sys.txt
+
+# ----- Common -----
+
+# Resource
+resource fd[int32]: -1
+resource fd_dir[fd]: AT_FDCWD
+resource pid[int32]: 0, -1
+resource uid[int32]: 0, -1, 0xee00, 0xee01
+resource gid[int32]: 0, -1, 0xee00, 0xee01
+
+# ----- Syscalls -----
+
+# File system
+getcwd(buf buffer[out], size len[buf])
+# Different from syzkaller version
+pipe2(pipefd ptr[out, array[fd, 2]], flags flags[pipe_flags])
+dup(oldfd fd) fd
+dup3(oldfd fd, newfd fd, flags flags[dup_flags]) fd
+chdir(dir ptr[in, filename])
+openat(fd fd_dir[opt], file ptr[in, filename], flags flags[open_flags], mode flags[open_mode]) fd
+close(fd fd)
+# Why not use struct for ent?
+getdents64(fd fd_dir, ent buffer[out], count len[ent])
+read(fd fd, buf buffer[out], count len[buf])
+write(fd fd, buf buffer[in], count len[buf])
+linkat(oldfd fd_dir, old ptr[in, filename], newfd fd_dir, new ptr[in, filename], flags flags[linkat_flags])
+unlinkat(fd fd_dir, path ptr[in, filename], flags flags[unlinkat_flags])
+mkdirat(fd fd_dir[opt], path ptr[in, filename], mode flags[open_mode])
+umount2(path ptr[in, filename], flags flags[umount_flags])
+mount(src ptr[in, blockdev_filename], dst ptr[in, filename], type ptr[in, string[filesystem]], flags flags[mount_flags], data ptr[in, string, opt])
+fstat(fd fd, statbuf ptr[out, stat])
+
+# Process
+# Not sure what is done to clone
+# Small trick - syzkaller cannot give the proper stack pointer to clone(), but we can do it with the aid of pseudo syscalls.
+syz_clone(flags flags[clone_flags], stack buffer[in], stack_len bytesize[stack], parentid ptr[out, int32], childtid ptr[out, int32], tls buffer[in]) pid
+# We need these disabled definitions to simplify the presence and the NR checking.
+clone(flags flags[clone_flags], sp buffer[in], parentid ptr[out, int32], childtid ptr[out, int32], tls buffer[in]) (breaks_returns, disabled)
+execve(file ptr[in, filename], argv ptr[in, array[ptr[in, string]]], envp ptr[in, array[ptr[in, string]]])
+# Different from syzkaller version
+wait4(pid pid, status ptr[out, int32, opt], options flags[wait_options])
+# Different from syzkaller
+exit(code intptr)
+# Disabled in syzkaller
+getppid() pid
+getpid() pid
+
+# Memory
+brk(brk intptr)
+munmap(addr vma, len len[addr])
+mmap(addr vma, len len[addr], prot flags[mmap_prot], flags flags[mmap_flags], fd fd, offset intptr[0:0xffffffff, 0x1000])
+
+# Others
+times(buf ptr[out, tms])
+uname(buf buffer[out])
+sched_yield
+# Disabled in syzkaller
+gettimeofday()
+nanosleep(req ptr[in, timespec], rem ptr[out, timespec, opt])
+
+# ----- Types -----
+
+blockdev_filename [
+	filename    filename
+	nbd     nbd_filename
+	loop	noop_filename
+	nullb   string["/dev/nullb0"]
+	md0		string["/dev/md0"]
+	sg0		string["/dev/sg0"]
+	sr0		string["/dev/sr0"]
+] [varlen]
+
+nbd_filename {
+	prefix	stringnoz["/dev/nbd"]
+	id	proc['0', 1, int8]
+	z	const[0, int8]
+} [packed]
+
+loop_filename {
+	prefix	stringnoz["/dev/loop"]
+	id	proc['0', 1, int8]
+	z	const[0, int8]
+} [packed]
+
+stat {
+	st_dev		intptr
+	st_ino		intptr
+	st_mode		int32
+	st_nlink	int32
+	st_uid		uid
+	st_gid		gid
+	st_rdev		intptr
+	__pad1		const[0, intptr]
+	st_size		intptr
+	st_blksize	int32
+	__pad2		const[0, int32]
+	st_blocks	intptr
+	st_atime	intptr
+	st_atime_nsec	intptr
+	st_mtime	intptr
+	st_mtime_nsec	intptr
+	st_ctime	intptr
+	st_ctime_nsec	intptr
+	__unused4	const[0, int32]
+	__unused5	const[0, int32]
+}
+
+tms {
+	utime	intptr
+	stime	intptr
+	cutime	intptr
+	cstime	intptr
+}
+
+timeval {
+    sec  intptr
+    usec intptr
+}
+
+timezone {
+    minuteswest int32
+    dsttime     int32
+}
+
+# prog knowns about this struct type
+timespec {
+	sec     time_sec
+	nsec	time_nsec
+}
+
+# ----- Constants -----
+
+pipe_flags = O_NONBLOCK, O_CLOEXEC, O_DIRECT, O_NOTIFICATION_PIPE
+dup_flags = O_CLOEXEC
+# Not providing O_WRONLY means O_RDONLY.
+open_flags = O_WRONLY, O_RDWR, O_APPEND, FASYNC, O_CLOEXEC, O_CREAT, O_DIRECT, O_DIRECTORY, O_EXCL, O_LARGEFILE, O_NOATIME, O_NOCTTY, O_NOFOLLOW, O_NONBLOCK, O_PATH, O_SYNC, O_TRUNC, __O_TMPFILE
+open_mode = S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH
+linkat_flags = AT_EMPTY_PATH, AT_SYMLINK_FOLLOW
+unlinkat_flags = AT_REMOVEDIR
+umount_flags = MNT_FORCE, MNT_DETACH, MNT_EXPIRE, UMOUNT_NOFOLLOW
+ext4_types = "ext4", "ext3", "ext2"
+filesystem = "sysfs", "rootfs", "ramfs", "tmpfs", "devtmpfs", "debugfs", "securityfs", "sockfs", "pipefs", "anon_inodefs", "devpts", "hugetlbfs", "vfat", "ecryptfs", "fuseblk", "fuse", "rpc_pipefs", "nfs", "nfs4", "nfsd", "binfmt_misc", "autofs", "xfs", "jfs", "msdos", "ntfs", "ntfs3", "minix", "hfs", "hfsplus", "qnx4", "ufs", "btrfs", "configfs", "ncpfs", "qnx6", "exofs", "befs", "vxfs", "gfs2", "gfs2meta", "fusectl", "bfs", "nsfs", "efs", "cifs", "efivarfs", "affs", "tracefs", "bdev", "ocfs2", "ocfs2_dlmfs", "hpfs", "proc", "afs", "reiserfs", "jffs2", "romfs", "aio", "sysv", "v7", "udf", "ceph", "pstore", "adfs", "9p", "hostfs", "squashfs", "cramfs", "iso9660", "coda", "nilfs2", "logfs", "overlay", "f2fs", "omfs", "ubifs", "openpromfs", "bpf", "cgroup", "cgroup2", "cpuset", "mqueue", "aufs", "selinuxfs", "dax", "erofs", "virtiofs", "exfat", "binder", "zonefs", "pvfs2", "incremental-fs", "esdfs", "smb3", "gadgetfs", ext4_types
+clone_flags = CLONE_VM, CLONE_FS, CLONE_FILES, CLONE_SIGHAND, CLONE_PTRACE, CLONE_VFORK, CLONE_PARENT, CLONE_THREAD, CLONE_NEWNS, CLONE_SYSVSEM, CLONE_SETTLS, CLONE_PARENT_SETTID, CLONE_CHILD_CLEARTID, CLONE_UNTRACED, CLONE_CHILD_SETTID, CLONE_NEWCGROUP, CLONE_NEWUTS, CLONE_NEWIPC, CLONE_NEWUSER, CLONE_NEWPID, CLONE_NEWNET, CLONE_IO, CLONE_PIDFD, CLONE_NEWTIME
+wait_options = WNOHANG, WUNTRACED, WCONTINUED, WEXITED, WSTOPPED, WCONTINUED, WNOHANG, WNOWAIT, __WCLONE, __WALL, __WNOTHREAD
+mmap_prot = PROT_EXEC, PROT_READ, PROT_WRITE, PROT_SEM, PROT_GROWSDOWN, PROT_GROWSUP
+mmap_flags = MAP_SHARED, MAP_PRIVATE, MAP_32BIT, MAP_ANONYMOUS, MAP_DENYWRITE, MAP_EXECUTABLE, MAP_FILE, MAP_FIXED, MAP_GROWSDOWN, MAP_HUGETLB, MAP_LOCKED, MAP_NONBLOCK, MAP_NORESERVE, MAP_POPULATE, MAP_STACK, MAP_UNINITIALIZED, MAP_SHARED_VALIDATE, MAP_SYNC, MAP_FIXED_NOREPLACE

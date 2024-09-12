@@ -1,0 +1,35 @@
+resource fd[int32]: -1
+resource fd_dir[fd]: AT_FDCWD
+
+# ----- TEST -----
+# foo(a int64, b int64, buf ptr[in, filename], res fd[opt])
+# bar() fd
+# ----- TEST -----
+
+# File system
+# getcwd(buf buffer[out], size len[buf])
+# Different from syzkaller version
+# pipe2(pipefd ptr[out, array[fd, 2]], flags flags[pipe_flags])
+dup(oldfd fd) fd
+dup3(oldfd fd, newfd fd, flags flags[dup_flags]) fd
+chdir(dir ptr[in, filename])
+openat(fd fd_dir[opt], file ptr[in, filename], flags flags[open_flags], mode flags[open_mode]) fd
+close(fd fd)
+# Why not use struct for ent?
+# getdents64(fd fd_dir, ent buffer[out], count len[ent])
+# read(fd fd, buf buffer[out], count len[buf])
+# write(fd fd, buf buffer[in], count len[buf])
+linkat(oldfd fd_dir, old ptr[in, filename], newfd fd_dir, new ptr[in, filename], flags flags[linkat_flags])
+unlinkat(fd fd_dir, path ptr[in, filename], flags flags[unlinkat_flags])
+mkdirat(fd fd_dir[opt], path ptr[in, filename], mode flags[open_mode])
+# umount2(path ptr[in, filename], flags flags[umount_flags])
+# mount(src ptr[in, blockdev_filename], dst ptr[in, filename], type ptr[in, string[filesystem]], flags flags[mount_flags], data ptr[in, string, opt])
+# fstat(fd fd, statbuf ptr[out, stat])
+
+# Flags
+dup_flags = O_CLOEXEC
+# Not providing O_WRONLY means O_RDONLY.
+open_flags = O_WRONLY, O_RDWR, O_APPEND, FASYNC, O_CLOEXEC, O_CREAT, O_DIRECT, O_DIRECTORY, O_EXCL, O_LARGEFILE, O_NOATIME, O_NOCTTY, O_NOFOLLOW, O_NONBLOCK, O_PATH, O_SYNC, O_TRUNC, __O_TMPFILE
+open_mode = S_IRUSR, S_IWUSR, S_IXUSR, S_IRGRP, S_IWGRP, S_IXGRP, S_IROTH, S_IWOTH, S_IXOTH
+linkat_flags = AT_EMPTY_PATH, AT_SYMLINK_FOLLOW
+unlinkat_flags = AT_REMOVEDIR
