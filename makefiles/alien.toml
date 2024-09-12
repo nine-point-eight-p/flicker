@@ -1,0 +1,61 @@
+extend = "../Makefile.toml"
+
+[env]
+KERNEL_NAME = "Alien"
+KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
+KERNEL_ELF = "${KERNEL_DIR}/kernel-qemu"
+
+IMG = "${KERNEL_DIR}/tools/sdcard.img"
+RUSTUP_TOOLCHAIN = "" # clear env
+
+[tasks.kernel]
+script_runner = "@shell"
+script = """
+make -C ${KERNEL_DIR} build
+"""
+
+[tasks.sdcard]
+script_runner = "@shell"
+script = """
+make -C ${KERNEL_DIR} sdcard
+"""
+
+[tasks.fuzz]
+dependencies = ["run_fuzzer_base", "sdcard"]
+command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
+args = [
+    "fuzz",
+    "--desc", "desc/test.txt",
+    "--const", "desc/sys.txt.const",
+    "--max-calls", "10",
+    "--",
+    "-L", "/usr/local/share/qemu",
+    "-machine", "virt",
+    "-bios", "default",
+    "-drive", "file=${IMG},if=none,format=raw,id=x0",
+    "-device", "virtio-blk-device,drive=x0",
+    "-kernel", "${KERNEL_ELF}",
+    "-nographic",
+    "-smp", "1",
+    "-m", "1024M",
+    "-serial", "mon:stdio",
+]
+
+[tasks.reproduce]
+dependencies = ["run_fuzzer_base", "sdcard"]
+command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
+args = [
+    "reproduce",
+    "corpus/gen/506f8d7b3f143e2a",
+    "--",
+    "-L", "/usr/local/share/qemu",
+    "-machine", "virt",
+    "-bios", "default",
+    "-drive", "file=${IMG},if=none,format=raw,id=x0",
+    "-device", "virtio-blk-device,drive=x0",
+    "-kernel", "${KERNEL_ELF}",
+    "-nographic",
+    "-smp", "1",
+    "-m", "1024M",
+    "-serial", "mon:stdio",
+]

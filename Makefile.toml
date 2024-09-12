@@ -45,16 +45,9 @@ args = [
 ]
 
 # This task is to simplify the work for extending by defining all the dependencies.
+# You should extend this task as dependencies if you want to run the fuzzer.
 [tasks.run_fuzzer_base]
 dependencies = ["build_fuzzer", "kernel", "kernel_image", "dummy_image"]
-
-# This task should be defined by extending according to the kernel.
-[tasks.run_fuzzer]
-dependencies = ["run_fuzzer_base"] # You should add this line when extending.
-script = """
-echo "Error: Task run_fuzzer should be overridden. Exiting..."
-exit 1
-"""
 
 # For users
 
