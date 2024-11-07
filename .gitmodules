@@ -1,0 +1,16 @@
+[submodule "kernel/Alien"]
+	path = kernel/Alien
+	url = https://github.com/nine-point-eight-p/Alien.git
+	branch = fuzz
+[submodule "kernel/rCore-Tutorial-v3"]
+	path = kernel/rCore-Tutorial-v3
+	url = https://github.com/nine-point-eight-p/rCore-Tutorial-v3
+	branch = ch1-fuzz
+[submodule "kernel/xv6-riscv"]
+	path = kernel/xv6-riscv
+	url = git@github.com:nine-point-eight-p/xv6-riscv.git
+	branch = fuzz
+[submodule "kernel/xv6-x86_64"]
+	path = kernel/xv6-x86_64
+	url = git@github.com:nine-point-eight-p/xv6-x86_64.git
+	branch = fuzz

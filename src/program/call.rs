@@ -173,6 +173,7 @@ impl GroupArg {
 
 impl ToExecBytes for GroupArg {
     fn to_exec_bytes(&self) -> Vec<u8> {
+        // TODO: This implementation is only for structs but not for arrays
         self.0.iter().flat_map(|arg| arg.to_exec_bytes()).collect()
     }
 }

@@ -8,20 +8,22 @@ KERNEL_ELF = "${KERNEL_DIR}/kernel-qemu"
 IMG = "${KERNEL_DIR}/tools/sdcard.img"
 RUSTUP_TOOLCHAIN = "" # clear env
 
-[tasks.kernel]
-script_runner = "@shell"
-script = """
-make -C ${KERNEL_DIR} build
-"""
+[tasks.build_kernel]
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "build"]
+
+[tasks.clean_kernel]
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "clean"]
 
 [tasks.sdcard]
-script_runner = "@shell"
-script = """
-make -C ${KERNEL_DIR} sdcard
-"""
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "sdcard"]
 
-[tasks.fuzz]
-dependencies = ["run_fuzzer_base", "sdcard"]
+[tasks.build]
+dependencies = ["build_fuzzer", "build_kernel", "sdcard"]
+
+[tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "fuzz",
@@ -42,7 +44,7 @@ args = [
 ]
 
 [tasks.reproduce]
-dependencies = ["run_fuzzer_base", "sdcard"]
+dependencies = ["build"]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "reproduce",

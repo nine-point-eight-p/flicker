@@ -2,24 +2,21 @@ extend = "../Makefile.toml"
 
 [env]
 KERNEL_NAME = "xv6-riscv"
+KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
 
-[tasks.kernel]
-script_runner = "@shell"
-script = """
-make -C ${KERNEL_DIR} \
-    kernel/kernel fs.img \
-    CFLAGS_EXTRA="-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include" \
-"""
+[tasks.build_kernel]
+command = "make"
+args = [
+    "-C", "${KERNEL_DIR}",
+    "kernel/kernel", "fs.img",
+    "CFLAGS_EXTRA=\"-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include\"",
+]
 
-# [tasks.kernel_image]
-# script_runner = "@shell"
-# script = """
-# qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/fs.img ${KERNEL_DIR}/fs.qcow2
-# """
+[tasks.clean_kernel]
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "clean"]
 
-[tasks.run_fuzzer]
-clear = true
-dependencies = ["run_fuzzer_base"]
+[tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "--",

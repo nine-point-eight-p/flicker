@@ -1,80 +1,51 @@
 [env]
+# Profile
 PROFILE = { value = "release", condition = { env_not_set = ["PROFILE"] } }
+FEATURE = { value = "riscv64", condition = { env_not_set = ["FEATURE"] } }
+# Fuzzer
 TARGET_NAME = "fuzzer"
 TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
 TARGET_DEFINE = "TARGET_SYNC_EXIT"
-KERNEL_NAME = "" # Should be defined by extending according to the kernel
-KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
+# Kernel
+KERNEL_NAME = "" # Should be defined according to the kernel
+KERNEL_DIR = ""  # Should be defined according to the kernel
 # LibAFL congiuration
 LLVM_CONFIG = "15" # Not necessary, but specify if you encounter "LLVM not found" error
-LIBAFL_QEMU_DIR = "${HOME}/os/qemu-libafl-bridge"
+# LIBAFL_QEMU_DIR = "${HOME}/os/qemu-libafl-bridge"
 
-# Templates to be extended
-
-# Default: build with make and extra flags
-[tasks.kernel]
-script_runner = "@shell"
-script = """
-make -C ${KERNEL_DIR} \
-    CFLAGS_EXTRA="-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include" \
-"""
-
-# Default: do nothing
-[tasks.kernel_image]
-dependencies = ["kernel"]
-script_runner = "@shell"
-script = """
-echo "Task kernel_image has nothing to do."
-"""
-
-[tasks.dummy_image]
-condition = { files_not_exist = [ "${TARGET_DIR}/dummy.qcow2" ] }
-script_runner = "@shell"
-script = """
-qemu-img create -f qcow2 ${TARGET_DIR}/dummy.qcow2 32M
-"""
-
+# Build fuzzer
 [tasks.build_fuzzer]
 command = "cargo"
 args = [
     "build",
-    "--features", "riscv64",
+    "--features", "${FEATURE}",
     "--profile", "${PROFILE}",
     "--target-dir", "${TARGET_DIR}",
     "-v",
 ]
 
-# This task is to simplify the work for extending by defining all the dependencies.
-# You should extend this task as dependencies if you want to run the fuzzer.
-[tasks.run_fuzzer_base]
-dependencies = ["build_fuzzer", "kernel", "kernel_image", "dummy_image"]
-
-# For users
-
-[tasks.build]
+# Clean fuzzer
+[tasks.clean_fuzzer]
 command = "cargo"
-args = [
-    "make",
-    "--makefile", "$makefiles/${KERNEL_NAME}.toml",
-    "build_fuzzer", # Don't call build!
-]
+args = ["clean"]
 
-[tasks.run]
-command = "cargo"
-args = [
-    "make",
-    "--makefile", "makefiles/${KERNEL_NAME}.toml",
-    "run_fuzzer", # Don't call run!
-]
+# NOTE: This is an empty task, you should define it according to the kernel
+[tasks.build_kernel]
+
+# NOTE: This is an empty task, you should define it according to the kernel
+[tasks.clean_kernel]
 
 [tasks.default]
 alias = "run"
 
+[tasks.build]
+clear = true
+dependencies = ["build_fuzzer", "build_kernel"]
+
+[tasks.run]
+clear = true
+dependencies = ["build"]
+
 [tasks.clean]
 clear = true
-script_runner = "@shell"
-script = """
-cargo clean
-rm -rf ${CARGO_MAKE_CRATE_TARGET_DIRECTORY}
-make clean -C ${KERNEL_DIR}
-"""
+dependencies = ["clean_fuzzer", "clean_kernel"]

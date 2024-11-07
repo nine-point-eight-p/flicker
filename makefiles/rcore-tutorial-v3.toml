@@ -6,18 +6,19 @@ KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}/os"
 KERNEL_ELF = "${KERNEL_DIR}/target/riscv64gc-unknown-none-elf/release/os"
 KERNEL_BIN = "${KERNEL_ELF}.bin"
 KERNEL_ENTRY_PA = 0x80200000
+
 FS_IMG = "${KERNEL_DIR}/../user/target/riscv64gc-unknown-none-elf/release/fs.img"
 RUSTUP_TOOLCHAIN = "" # clear env
 
-[tasks.kernel]
-script_runner = "@shell"
-script = """
-make -C ${KERNEL_DIR} build
-"""
+[tasks.build_kernel]
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "build"]
 
-[tasks.run_fuzzer]
-clear = true
-dependencies = ["run_fuzzer_base"]
+[tasks.clean_kernel]
+command = "make"
+args = ["-C", "${KERNEL_DIR}", "clean"]
+
+[tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "--",

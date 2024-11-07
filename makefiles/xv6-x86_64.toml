@@ -1,18 +1,36 @@
 extend = "../Makefile.toml"
 
 [env]
+FEATURE = "x86_64" # Override the default feature
 KERNEL_NAME = "xv6-x86_64"
+KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
+
+[tasks.build_kernel]
+command = "make"
+args = [
+    "-C", "${KERNEL_DIR}",
+    "fs.img", "xv6.img",
+    "CFLAGS_EXTRA=\"-D ${TARGET_DEFINE} -I${TARGET_DIR}/${PROFILE}/include\"",
+]
 
 [tasks.kernel_image]
+dependencies = ["build_kernel"]
 script_runner = "@shell"
 script = """
 qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/xv6.img ${KERNEL_DIR}/xv6.qcow2
 qemu-img convert -f raw -O qcow2 ${KERNEL_DIR}/fs.img ${KERNEL_DIR}/fs.qcow2
 """
 
-[tasks.run_fuzzer]
-clear = true
-dependencies = ["run_fuzzer_base"]
+[tasks.dummy_image]
+dependencies = ["build_fuzzer"]
+condition = { files_not_exist = [ "${TARGET_DIR}/dummy.qcow2" ] }
+command = "qemu-img"
+args = ["create", "-f", "qcow2", "${TARGET_DIR}/dummy.qcow2", "32M"]
+
+[tasks.build]
+dependencies = ["build_fuzzer", "build_kernel", "kernel_image", "dummy_image"]
+
+[tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
     "--",
