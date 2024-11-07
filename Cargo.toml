@@ -26,9 +26,9 @@ x86_64 = ["libafl_qemu/x86_64"]
 bytes = []
 
 [dependencies]
-libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
-libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
-libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/", features = ["systemmode"] }
+libafl = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv" }
+libafl_bolts = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv" }
+libafl_qemu = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv", features = ["systemmode"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
 ahash = "0.8.11"
@@ -45,7 +45,7 @@ enum_index = { git = "https://github.com/nine-point-eight-p/enum_index", branch 
 enum_common_fields = "0.7.0"
 
 # Use local libraries for development
-# [patch."https://github.com/AFLplusplus/LibAFL/"]
+# [patch."https://github.com/nine-point-eight-p/LibAFL"]
 # libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
 # libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
 # libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/" }

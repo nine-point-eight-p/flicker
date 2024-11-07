@@ -150,6 +150,8 @@ cargo make --makefile path/to/makefile.toml run
 
 注意需要先通过 `--makefile` 导入 Makefile，再指定任务，保证环境变量正确加载。
 
+flicker 还提供了测例复现功能，请参考 `makefiles/Alien.toml` 中的 `reproduce` 任务。
+
 ## TODO
 
 - [ ] 更新 LibAFL 依赖。
