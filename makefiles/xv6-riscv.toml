@@ -1,6 +1,7 @@
 extend = "../Makefile.toml"
 
 [env]
+FEATURE = "riscv64,bytes"
 KERNEL_NAME = "xv6-riscv"
 KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
 
@@ -19,6 +20,8 @@ args = ["-C", "${KERNEL_DIR}", "clean"]
 [tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
+    "fuzz",
+    "--max-size", "50",
     "--",
     "-machine", "virt",
     "-bios", "none",

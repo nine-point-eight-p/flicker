@@ -1,7 +1,7 @@
 [env]
 # Profile
 PROFILE = { value = "release", condition = { env_not_set = ["PROFILE"] } }
-FEATURE = { value = "riscv64", condition = { env_not_set = ["FEATURE"] } }
+FEATURE = { value = "", condition = { env_not_set = ["FEATURE"] } }
 # Fuzzer
 TARGET_NAME = "fuzzer"
 TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
@@ -11,7 +11,7 @@ KERNEL_NAME = "" # Should be defined according to the kernel
 KERNEL_DIR = ""  # Should be defined according to the kernel
 # LibAFL congiuration
 LLVM_CONFIG = "15" # Not necessary, but specify if you encounter "LLVM not found" error
-# LIBAFL_QEMU_DIR = "${HOME}/os/qemu-libafl-bridge"
+# LIBAFL_QEMU_DIR = "${HOME}/os/qemu-libafl-bridge" # Specify if you are using your own version of qemu-libafl-bridge
 
 # Build fuzzer
 [tasks.build_fuzzer]
@@ -42,6 +42,7 @@ alias = "run"
 clear = true
 dependencies = ["build_fuzzer", "build_kernel"]
 
+# NOTE: No commands are defined for the run task, you should define it according to the kernel
 [tasks.run]
 clear = true
 dependencies = ["build"]

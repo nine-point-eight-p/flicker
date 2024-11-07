@@ -1,7 +1,7 @@
 extend = "../Makefile.toml"
 
 [env]
-FEATURE = "x86_64" # Override the default feature
+FEATURE = "x86_64,bytes"
 KERNEL_NAME = "xv6-x86_64"
 KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
 
@@ -33,6 +33,8 @@ dependencies = ["build_fuzzer", "build_kernel", "kernel_image", "dummy_image"]
 [tasks.run]
 command = "${TARGET_DIR}/${PROFILE}/${TARGET_NAME}"
 args = [
+    "fuzz",
+    "--max-size", "64",
     "--",
     "-nic", "none",
     "-drive", "file=${KERNEL_DIR}/fs.qcow2,index=1,media=disk",

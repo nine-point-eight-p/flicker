@@ -17,8 +17,13 @@ name = "fuzzer"
 path = "src/main.rs"
 
 [features]
+# For riscv64 target
 riscv64 = ["libafl_qemu/riscv64"]
+# For x86_64 target
 x86_64 = ["libafl_qemu/x86_64"]
+# Use bytes input instead of syscall input
+# DEPRECATED: Only for compatibility with older versions of flicker
+bytes = []
 
 [dependencies]
 libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
@@ -35,12 +40,11 @@ log = "0.4.22"
 postcard = { version = "1.0.8", features = ["use-std"] }
 uuid = "1.10.0"
 path-clean = "1.0.1"
-# syscall2struct-helpers = { git = "https://github.com/nine-point-eight-p/syscall2struct.git" }
-syscall2struct-helpers = { path = "/home/patrickli/program/fuzzing/syscall2struct/syscall2struct-helpers" }
+syscall2struct-helpers = { git = "https://github.com/nine-point-eight-p/syscall2struct.git" }
 enum_index = { git = "https://github.com/nine-point-eight-p/enum_index", branch = "no_std_support" }
 enum_common_fields = "0.7.0"
 
-# You can also use pulled repo if you want to change something of the library
+# Use local libraries for development
 # [patch."https://github.com/AFLplusplus/LibAFL/"]
 # libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
 # libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }

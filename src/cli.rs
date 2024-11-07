@@ -46,16 +46,24 @@ pub struct FuzzOption {
     pub crash: String,
 
     /// Path to the description file
+    #[cfg(not(feature = "bytes"))]
     #[arg(long)]
     pub desc: String,
 
     /// Path to the constants file
+    #[cfg(not(feature = "bytes"))]
     #[arg(long)]
     pub r#const: String,
 
     /// Max number of calls per run
+    #[cfg(not(feature = "bytes"))]
     #[arg(long, default_value = "30")]
     pub max_calls: usize,
+
+    /// Max size of input
+    #[cfg(feature = "bytes")]
+    #[arg(long, default_value = "4096")]
+    pub max_size: usize,
 
     /// Arguments passed to Qemu
     #[arg(num_args = 0.., allow_hyphen_values = true)]

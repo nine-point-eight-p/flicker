@@ -17,6 +17,8 @@ use libafl::{
     state::{HasCorpus, HasMaxSize, StdState},
     Error,
 };
+#[cfg(feature = "bytes")]
+use libafl::{generators::RandBytesGenerator, inputs::BytesInput, mutators::havoc_mutations};
 use libafl_bolts::{
     core_affinity::Cores,
     current_nanos,
@@ -33,8 +35,7 @@ use libafl_qemu::{
     FastSnapshotManager, QemuHooks, StdEmulatorExitHandler,
 };
 
-// use libafl_qemu::QemuSnapshotBuilder; for normal qemu snapshot
-
+#[cfg(not(feature = "bytes"))]
 use flicker::{
     generator::SyscallGenerator,
     input::SyscallInput,
@@ -64,9 +65,14 @@ pub fn fuzz(opt: FuzzOption) {
         init_corpus,
         gen_corpus,
         crash,
+        #[cfg(not(feature = "bytes"))]
         desc,
+        #[cfg(not(feature = "bytes"))]
         r#const,
+        #[cfg(not(feature = "bytes"))]
         max_calls,
+        #[cfg(feature = "bytes")]
+        max_size,
         mut run_args,
     } = opt;
 
@@ -75,7 +81,9 @@ pub fn fuzz(opt: FuzzOption) {
     let init_corpus_dir = PathBuf::from(init_corpus);
     let gen_corpus_dir = PathBuf::from(gen_corpus);
     let crash_dir = PathBuf::from(crash.clone());
+    #[cfg(not(feature = "bytes"))]
     let desc_file = PathBuf::from(desc.clone());
+    #[cfg(not(feature = "bytes"))]
     let const_file = PathBuf::from(r#const.clone());
     // TODO: Add cli options to testcases as metadata
     // let testcase_metadata = TestcaseMetadata {
@@ -90,6 +98,7 @@ pub fn fuzz(opt: FuzzOption) {
     // an empty string as a placeholder.
     run_args.insert(0, String::new());
 
+    #[cfg(not(feature = "bytes"))]
     let syscall_metadata = SyscallMetadata::from_parsed(parse(&desc_file, &const_file));
 
     let mut run_client = |state: Option<_>, mut mgr, _core_id| {
@@ -110,13 +119,17 @@ pub fn fuzz(opt: FuzzOption) {
         println!("Devices = {:?}", devices);
 
         // The wrapped harness function, calling out to the LLVM-style harness
-        let mut harness =
-            |input: &SyscallInput, qemu_executor_state: &mut QemuExecutorState<_, _>| unsafe {
-                emu.run(input, qemu_executor_state)
-                    .unwrap()
-                    .try_into()
-                    .unwrap()
-            };
+        #[cfg(not(feature = "bytes"))]
+        type Input = SyscallInput;
+        #[cfg(feature = "bytes")]
+        type Input = BytesInput;
+
+        let mut harness = |input: &Input, qemu_executor_state: &mut QemuExecutorState<_, _>| unsafe {
+            emu.run(input, qemu_executor_state)
+                .unwrap()
+                .try_into()
+                .unwrap()
+        };
 
         // Create an observation channel using the coverage map
         let edges_observer = unsafe {
@@ -160,7 +173,10 @@ pub fn fuzz(opt: FuzzOption) {
                 &mut objective,
             )
             .unwrap();
+            #[cfg(not(feature = "bytes"))]
             new_state.set_max_size(max_calls);
+            #[cfg(feature = "bytes")]
+            new_state.set_max_size(max_size);
             new_state
         });
 
@@ -177,7 +193,10 @@ pub fn fuzz(opt: FuzzOption) {
         );
 
         // Setup a syscall mutator with a mutational stage
+        #[cfg(not(feature = "bytes"))]
         let mutator = StdScheduledMutator::new(syscall_mutations(syscall_metadata.clone()));
+        #[cfg(feature = "bytes")]
+        let mutator = StdScheduledMutator::new(havoc_mutations());
         let calibration_feedback = MaxMapFeedback::new(&edges_observer);
         let mut stages = tuple_list!(
             StdMutationalStage::new(mutator),
@@ -209,8 +228,12 @@ pub fn fuzz(opt: FuzzOption) {
                 println!("We imported {} inputs from disk.", state.corpus().count());
             } else {
                 println!("Failed to import initial inputs, try to generate");
+                #[cfg(not(feature = "bytes"))]
                 let context = Context::new(syscall_metadata.clone());
+                #[cfg(not(feature = "bytes"))]
                 let mut generator = SyscallGenerator::new(max_calls, context);
+                #[cfg(feature = "bytes")]
+                let mut generator = RandBytesGenerator::new(max_size);
                 state
                     .generate_initial_inputs(
                         &mut fuzzer,

@@ -1,6 +1,7 @@
 extend = "../Makefile.toml"
 
 [env]
+FEATURE = "riscv64"
 KERNEL_NAME = "Alien"
 KERNEL_DIR = "${CARGO_MAKE_WORKING_DIRECTORY}/kernel/${KERNEL_NAME}"
 KERNEL_ELF = "${KERNEL_DIR}/kernel-qemu"
