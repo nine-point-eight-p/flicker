@@ -1,7 +1,7 @@
 use std::iter;
 use std::ops::Neg;
 
-use libafl_bolts::rands::Rand;
+use libafl_bolts::{nonzero, rands::Rand};
 
 use enum_dispatch::enum_dispatch;
 use log::debug;
@@ -90,7 +90,7 @@ impl FlagType {
 
         // Enumeration flags: randomly choose one
         if !self.is_bitmask && !one_of(rand, 10) {
-            return self.values[rand.below(self.values.len())];
+            return self.values[rand.below(self.values.len().try_into().unwrap())];
         }
 
         // Don't know why it returns 0 here...
@@ -108,7 +108,7 @@ impl FlagType {
             if val != 0 && n_out_of(rand, 1, 3) {
                 break;
             }
-            let mut flag = self.values[rand.below(self.values.len())];
+            let mut flag = self.values[rand.below(self.values.len().try_into().unwrap())];
             if one_of(rand, 20) {
                 // Try choosing adjacent bit values in case we forgot
                 // to add all relevant flags to the descriptions
@@ -189,7 +189,7 @@ impl StringBuffer {
     pub(super) fn generate_string<R: Rand>(&self, rand: &mut R, ctx: &Context) -> String {
         let mut string = if !self.values.is_empty() {
             // Choose a special value
-            self.values[rand.below(self.values.len())].clone()
+            self.values[rand.below(self.values.len().try_into().unwrap())].clone()
         } else if binary(rand) {
             // Use existing strings
             sample_from_iter(rand, ctx.strings().iter())
@@ -249,7 +249,7 @@ impl FilenameBuffer {
 
         let mut filename = if one_of(rand, 100) {
             // Use a special filename
-            SPECIAL_FILENAMES[rand.below(SPECIAL_FILENAMES.len())].to_string()
+            SPECIAL_FILENAMES[rand.below(nonzero!(SPECIAL_FILENAMES.len()))].to_string()
         } else if n_out_of(rand, 9, 10) {
             // Use an existing filename
             sample_from_iter(rand, ctx.filenames().iter())
@@ -282,7 +282,7 @@ impl GenerateArg for FilenameBuffer {
             Direction::Out => {
                 // We consider the filename length to be variable
                 let len = if n_out_of(rand, 1, 3) {
-                    rand.below(100) as u64
+                    rand.below(nonzero!(100)) as u64
                 } else {
                     rand_filename_length(rand)
                 };
@@ -312,7 +312,7 @@ impl GenerateArg for ByteBuffer {
         // assert!(len <= MAX_BUFFER_LENGTH);
         let arg = match self.attr.dir {
             Direction::In | Direction::InOut => {
-                let data = iter::repeat_with(|| rand.below(256) as u8)
+                let data = iter::repeat_with(|| rand.below(nonzero!(256)) as u8)
                     .take(len as usize)
                     .collect();
                 DataArg::In(data)
@@ -352,7 +352,7 @@ impl GenerateArg for StructType {
 
 impl GenerateArg for UnionType {
     fn generate<R: Rand>(&self, rand: &mut R, ctx: &mut Context) -> (Arg, Vec<Call>) {
-        let field = &self.fields[rand.below(self.fields.len())];
+        let field = &self.fields[rand.below(self.fields.len().try_into().unwrap())];
         generate_arg(rand, ctx, &field.ty)
     }
 
@@ -381,7 +381,7 @@ impl ResourceType {
         if resource_creators.is_empty() {
             return None;
         }
-        let idx = rand.below(resource_creators.len());
+        let idx = rand.below(resource_creators.len().try_into().unwrap());
         let syscall = resource_creators[idx].clone();
 
         // Generate the syscall and the argument
@@ -416,14 +416,14 @@ impl ResourceType {
         if results.is_empty() {
             return None;
         }
-        let id = *results[rand.below(results.len())];
+        let id = *results[rand.below(results.len().try_into().unwrap())];
         debug!("[ResourceType] Use existing resource, id: {}", id);
         Some(ResultArg::from_result(id).into())
     }
 
     /// Choose a fallback value
     pub fn choose_fallback<R: Rand>(&self, rand: &mut R) -> Arg {
-        let val = self.values[rand.below(self.values.len())];
+        let val = self.values[rand.below(self.values.len().try_into().unwrap())];
         debug!("[ResourceType] Choose fallback value: {}", val);
         ResultArg::from_literal(val).into()
     }
@@ -508,7 +508,7 @@ fn rand_int<R: Rand>(rand: &mut R, bits: u8) -> u64 {
     } else if n_out_of(rand, 5, 7) {
         val = (val as i64).neg() as u64;
     } else {
-        val <<= rand.below(bits as usize);
+        val <<= rand.below((bits as usize).try_into().unwrap());
     }
 
     // Truncate value to the number of bits
@@ -531,9 +531,9 @@ fn rand_string<R: Rand>(rand: &mut R) -> String {
     let mut buf = String::new();
     while n_out_of(rand, 3, 4) {
         if n_out_of(rand, 10, 11) {
-            buf.push(PUNCT[rand.below(PUNCT.len())]);
+            buf.push(PUNCT[rand.below(nonzero!(PUNCT.len()))]);
         } else {
-            buf.push(rand.below(256) as u8 as char);
+            buf.push(rand.below(nonzero!(256)) as u8 as char);
         }
     }
     buf
@@ -584,7 +584,7 @@ pub(super) fn rand_filename_length<R: Rand>(rand: &mut R) -> u64 {
     const SPECIAL_FILE_LENGTHS: [u64; 1] = [4096];
 
     let off = biased_rand(rand, 10, 5);
-    let len = SPECIAL_FILE_LENGTHS[rand.below(SPECIAL_FILE_LENGTHS.len())];
+    let len = SPECIAL_FILE_LENGTHS[rand.below(nonzero!(SPECIAL_FILE_LENGTHS.len()))];
     let res = if binary(rand) {
         len + off
     } else {
@@ -596,7 +596,7 @@ pub(super) fn rand_filename_length<R: Rand>(rand: &mut R) -> u64 {
 /// Generate a random buffer length.
 fn rand_buffer_length<R: Rand>(rand: &mut R) -> u64 {
     if n_out_of(rand, 50, 56) {
-        rand.below(256) as u64
+        rand.below(nonzero!(256)) as u64
     } else if n_out_of(rand, 5, 6) {
         MAX_BUFFER_LENGTH
     } else {
@@ -612,7 +612,7 @@ where
     R: Rand,
 {
     let vec: Vec<_> = iter.collect();
-    (!vec.is_empty()).then(|| vec[rand.below(vec.len())].clone())
+    (!vec.is_empty()).then(|| vec[rand.below(vec.len().try_into().unwrap())].clone())
 }
 
 #[inline]

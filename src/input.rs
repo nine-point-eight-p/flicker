@@ -1,6 +1,9 @@
 use std::hash::{BuildHasher, Hasher};
 
-use libafl::inputs::{HasTargetBytes, Input};
+use libafl::{
+    corpus::CorpusId,
+    inputs::{HasTargetBytes, Input},
+};
 use libafl_bolts::{ownedref::OwnedSlice, HasLen};
 
 use ahash::RandomState;
@@ -88,12 +91,14 @@ impl SyscallInput {
 }
 
 impl Input for SyscallInput {
-    fn generate_name(&self, idx: usize) -> String {
+    fn generate_name(&self, idx: Option<CorpusId>) -> String {
         let mut hasher = RandomState::with_seeds(0, 0, 0, 0).build_hasher();
-        hasher.write(&idx.to_le_bytes());
+        if let Some(idx) = idx {
+            hasher.write(&idx.0.to_le_bytes());
+        }
         self.calls
             .iter()
-            .for_each(|c| hasher.write(&c.number().to_le_bytes()));
+            .for_each(|c| hasher.write(&c.to_exec_bytes())); // TODO: Better way to hash calls
         format!("{:016x}", hasher.finish())
     }
 }

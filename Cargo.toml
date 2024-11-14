@@ -1,6 +1,7 @@
 [package]
 name = "flicker"
 version = "0.1.0"
+authors = ["Patrick Li <ninepointeight_p@outlook.com>"]
 edition = "2021"
 
 [profile.release]
@@ -26,9 +27,10 @@ x86_64 = ["libafl_qemu/x86_64"]
 bytes = []
 
 [dependencies]
-libafl = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv" }
-libafl_bolts = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv" }
-libafl_qemu = { git = "https://github.com/nine-point-eight-p/LibAFL", branch = "libafl_qemu_riscv", features = ["systemmode"] }
+libafl = "0.14.0"
+libafl_bolts = "0.14.0"
+libafl_qemu = { version = "0.14.0", features = ["systemmode"], default-features = false }
+libafl_targets = "0.14.0"
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
 ahash = "0.8.11"
@@ -41,11 +43,12 @@ postcard = { version = "1.0.8", features = ["use-std"] }
 uuid = "1.10.0"
 path-clean = "1.0.1"
 syscall2struct-helpers = { git = "https://github.com/nine-point-eight-p/syscall2struct.git" }
-enum_index = { git = "https://github.com/nine-point-eight-p/enum_index", branch = "no_std_support" }
+enum_index = "0.2.0"
 enum_common_fields = "0.7.0"
 
-# Use local libraries for development
-# [patch."https://github.com/nine-point-eight-p/LibAFL"]
-# libafl = { path = "/home/patrickli/os/LibAFL/libafl/" }
-# libafl_bolts = { path = "/home/patrickli/os/LibAFL/libafl_bolts/" }
-# libafl_qemu = { path = "/home/patrickli/os/LibAFL/libafl_qemu/" }
+[patch.crates-io]
+libafl = { git = "https://github.com/AFLplusplus/LibAFL", tag = "0.14.0" }
+libafl_bolts = { git = "https://github.com/AFLplusplus/LibAFL", tag = "0.14.0" }
+libafl_qemu = { git = "https://github.com/AFLplusplus/LibAFL", tag = "0.14.0" }
+libafl_targets = { git = "https://github.com/AFLplusplus/LibAFL", tag = "0.14.0" }
+enum_index =  { git = "https://github.com/nine-point-eight-p/enum_index", branch = "no_std_support" }

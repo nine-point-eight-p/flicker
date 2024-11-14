@@ -1,16 +1,15 @@
 //! A binary-only kernel fuzzer using LibAFL QEMU in systemmode
 
-use core::{ptr::addr_of_mut, time::Duration};
-use std::{env, path::PathBuf};
+use std::time::Duration;
 
 use libafl::{
     corpus::{Corpus, InMemoryOnDiskCorpus, OnDiskCorpus},
-    events::{launcher::Launcher, EventConfig},
+    events::{EventConfig, Launcher},
     feedback_or, feedback_or_fast,
     feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback},
     fuzzer::{Fuzzer, StdFuzzer},
     monitors::MultiMonitor,
-    mutators::scheduled::StdScheduledMutator,
+    mutators::StdScheduledMutator,
     observers::{CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver},
     schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler},
     stages::{CalibrationStage, StdMutationalStage},
@@ -27,13 +26,8 @@ use libafl_bolts::{
     shmem::{ShMemProvider, StdShMemProvider},
     tuples::tuple_list,
 };
-use libafl_qemu::{
-    command::StdCommandManager,
-    edges::{edges_map_mut_ptr, QemuEdgeCoverageHelper, EDGES_MAP_SIZE_IN_USE, MAX_EDGES_FOUND},
-    emu::Emulator,
-    executor::{stateful::StatefulQemuExecutor, QemuExecutorState},
-    FastSnapshotManager, QemuHooks, StdEmulatorExitHandler,
-};
+use libafl_qemu::{executor::QemuExecutor, modules::StdEdgeCoverageClassicModule, Emulator};
+use libafl_targets::{edges_map_mut_ptr, EDGES_MAP_DEFAULT_SIZE, MAX_EDGES_FOUND};
 
 #[cfg(not(feature = "bytes"))]
 use flicker::{
@@ -73,18 +67,11 @@ pub fn fuzz(opt: FuzzOption) {
         max_calls,
         #[cfg(feature = "bytes")]
         max_size,
-        mut run_args,
+        mut args,
     } = opt;
 
     let timeout = Duration::from_secs(timeout);
     let cores = Cores::from_cmdline(&cores).unwrap();
-    let init_corpus_dir = PathBuf::from(init_corpus);
-    let gen_corpus_dir = PathBuf::from(gen_corpus);
-    let crash_dir = PathBuf::from(crash.clone());
-    #[cfg(not(feature = "bytes"))]
-    let desc_file = PathBuf::from(desc.clone());
-    #[cfg(not(feature = "bytes"))]
-    let const_file = PathBuf::from(r#const.clone());
     // TODO: Add cli options to testcases as metadata
     // let testcase_metadata = TestcaseMetadata {
     //     desc,
@@ -96,26 +83,25 @@ pub fn fuzz(opt: FuzzOption) {
     // where the first argument is the path of the executable.
     // Since we directly pass arguments into the fuzzer, we add
     // an empty string as a placeholder.
-    run_args.insert(0, String::new());
+    args.insert(0, String::new());
 
     #[cfg(not(feature = "bytes"))]
-    let syscall_metadata = SyscallMetadata::from_parsed(parse(&desc_file, &const_file));
+    let syscall_metadata = SyscallMetadata::from_parsed(parse(&desc, &r#const));
 
     let mut run_client = |state: Option<_>, mut mgr, _core_id| {
+        // Choose modules
+        let modules = tuple_list!(StdEdgeCoverageClassicModule::builder()
+            .build()
+            .expect("Failed to create coverage module"));
+
         // Initialize QEMU
-        let args: Vec<String> = run_args.clone();
-        let env: Vec<(String, String)> = env::vars().collect();
+        let emulator = Emulator::builder()
+            .qemu_cli(args.clone())
+            .modules(modules)
+            .build()
+            .expect("Failed to initialize QEMU");
 
-        // let emu_snapshot_manager = QemuSnapshotBuilder::new(true);
-        let emu_snapshot_manager = FastSnapshotManager::new(); // Create a snapshot manager (normal or fast for now).
-        let emu_exit_handler: StdEmulatorExitHandler<FastSnapshotManager> =
-            StdEmulatorExitHandler::new(emu_snapshot_manager); // Create an exit handler: it is the entity taking the decision of what should be done when QEMU returns.
-
-        let cmd_manager = StdCommandManager::new();
-
-        let emu = Emulator::new(&args, &env, emu_exit_handler, cmd_manager).unwrap(); // Create the emulator
-
-        let devices = emu.list_devices();
+        let devices = emulator.list_devices();
         println!("Devices = {:?}", devices);
 
         // The wrapped harness function, calling out to the LLVM-style harness
@@ -124,19 +110,16 @@ pub fn fuzz(opt: FuzzOption) {
         #[cfg(feature = "bytes")]
         type Input = BytesInput;
 
-        let mut harness = |input: &Input, qemu_executor_state: &mut QemuExecutorState<_, _>| unsafe {
-            emu.run(input, qemu_executor_state)
-                .unwrap()
-                .try_into()
-                .unwrap()
+        let mut harness = |emu: &mut Emulator<_, _, _, _, _>, state: &mut _, input: &Input| unsafe {
+            emu.run(state, input).unwrap().try_into().unwrap()
         };
 
         // Create an observation channel using the coverage map
         let edges_observer = unsafe {
             HitcountsMapObserver::new(VariableMapObserver::from_mut_slice(
                 "edges",
-                OwnedMutSlice::from_raw_parts_mut(edges_map_mut_ptr(), EDGES_MAP_SIZE_IN_USE),
-                addr_of_mut!(MAX_EDGES_FOUND),
+                OwnedMutSlice::from_raw_parts_mut(edges_map_mut_ptr(), EDGES_MAP_DEFAULT_SIZE),
+                &raw mut MAX_EDGES_FOUND,
             ))
             .track_indices()
         };
@@ -162,10 +145,10 @@ pub fn fuzz(opt: FuzzOption) {
                 // RNG
                 StdRand::with_seed(current_nanos()),
                 // Corpus that will be evolved, we keep it in memory for performance
-                InMemoryOnDiskCorpus::new(gen_corpus_dir.clone()).unwrap(),
+                InMemoryOnDiskCorpus::new(gen_corpus.clone()).unwrap(),
                 // Corpus in which we store solutions (crashes in this example),
                 // on disk so the user can get them after stopping the fuzzer
-                OnDiskCorpus::new(crash_dir.clone()).unwrap(),
+                OnDiskCorpus::new(crash.clone()).unwrap(),
                 // States of the feedbacks.
                 // The feedbacks can report the data that should persist in the State.
                 &mut feedback,
@@ -187,11 +170,6 @@ pub fn fuzz(opt: FuzzOption) {
         // A fuzzer with feedbacks and a corpus scheduler
         let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
-        let mut hooks = QemuHooks::new(
-            emu.qemu().clone(),
-            tuple_list!(QemuEdgeCoverageHelper::default()),
-        );
-
         // Setup a syscall mutator with a mutational stage
         #[cfg(not(feature = "bytes"))]
         let mutator = StdScheduledMutator::new(syscall_mutations(syscall_metadata.clone()));
@@ -204,8 +182,8 @@ pub fn fuzz(opt: FuzzOption) {
         );
 
         // Create a QEMU in-process executor
-        let mut executor = StatefulQemuExecutor::new(
-            &mut hooks,
+        let mut executor = QemuExecutor::new(
+            emulator,
             &mut harness,
             tuple_list!(edges_observer, time_observer),
             &mut fuzzer,
@@ -219,7 +197,7 @@ pub fn fuzz(opt: FuzzOption) {
         executor.break_on_timeout();
 
         if state.must_load_initial_inputs() {
-            let dirs = [init_corpus_dir.clone(), gen_corpus_dir.clone()];
+            let dirs = [init_corpus.clone(), gen_corpus.clone()];
             if state
                 .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &dirs)
                 .is_ok()
@@ -233,7 +211,7 @@ pub fn fuzz(opt: FuzzOption) {
                 #[cfg(not(feature = "bytes"))]
                 let mut generator = SyscallGenerator::new(max_calls, context);
                 #[cfg(feature = "bytes")]
-                let mut generator = RandBytesGenerator::new(max_size);
+                let mut generator = RandBytesGenerator::new(max_size.try_into().unwrap());
                 state
                     .generate_initial_inputs(
                         &mut fuzzer,

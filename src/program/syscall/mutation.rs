@@ -1,10 +1,11 @@
+use std::num::NonZeroUsize;
+
 use libafl::{
     inputs::{BytesInput, HasMutatorBytes},
-    mutators::havoc_mutations_no_crossover,
-    prelude::{MutationResult, MutatorsTuple},
+    mutators::{havoc_mutations_no_crossover, MutationResult, MutatorsTuple},
     state::{HasRand, NopState},
 };
-use libafl_bolts::rands::Rand;
+use libafl_bolts::{nonzero, rands::Rand};
 
 use enum_dispatch::enum_dispatch;
 use enum_downcast::EnumDowncast;
@@ -43,10 +44,15 @@ impl MutateArg for IntType {
             self.generate_impl(rand)
         } else {
             // Refactored, but the probability is the same as syzkaller implementation
-            match rand.below(5) {
-                0 => arg.0.wrapping_add(rand.below(4) as u64 + 1),
-                1 => arg.0.wrapping_sub(rand.below(4) as u64 + 1),
-                _ => arg.0 ^ (1 << rand.below(self.bits as usize)),
+            match rand.below(nonzero!(5)) {
+                0 => arg.0.wrapping_add(rand.below(nonzero!(4)) as u64 + 1),
+                1 => arg.0.wrapping_sub(rand.below(nonzero!(4)) as u64 + 1),
+                _ => {
+                    // bits is verified when constructed
+                    let shift =
+                        rand.below(unsafe { NonZeroUsize::new_unchecked(self.bits as usize) });
+                    arg.0 ^ (1 << shift)
+                }
             }
         };
 
@@ -183,7 +189,9 @@ fn mutate_bytes(bytes: &mut Vec<u8>, range: Option<(u64, u64)>) {
     let mut input = BytesInput::new(bytes.to_vec());
 
     loop {
-        let index = nop_state.rand_mut().below(mutators.len());
+        let index = nop_state
+            .rand_mut()
+            .below(mutators.len().try_into().unwrap());
         let result = mutators
             .get_and_mutate(index.into(), &mut nop_state, &mut input)
             .unwrap();
@@ -215,7 +223,7 @@ fn mutate_buffer_length<R: Rand>(rand: &mut R, old_len: &mut u64, range: Option<
     let mut new_len = *old_len;
 
     while new_len == *old_len {
-        new_len += rand.below(33) as u64 - 16; // [0, 33) -> [-16, 17)
+        new_len += rand.below(nonzero!(33)) as u64 - 16; // [0, 33) -> [-16, 17)
         if (new_len as i64) < (min as i64) {
             new_len = min;
         }

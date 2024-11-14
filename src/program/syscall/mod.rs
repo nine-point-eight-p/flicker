@@ -214,6 +214,7 @@ impl IntType {
             }
             _ => unreachable!("Invalid argument type for integer"),
         };
+        assert!(bits > 0, "Integer size has to be positive");
         let range = find_range(&argument.opts);
         Self { attr, bits, range }
     }

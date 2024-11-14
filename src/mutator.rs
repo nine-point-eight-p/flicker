@@ -25,7 +25,10 @@ pub struct SyscallSpliceMutator;
 
 impl<S> Mutator<SyscallInput, S> for SyscallSpliceMutator
 where
-    S: UsesInput<Input = SyscallInput> + HasRand + HasCorpus + HasMaxSize,
+    S: UsesInput<Input = SyscallInput>
+        + HasRand
+        + HasCorpus<Corpus: Corpus<Input = SyscallInput>>
+        + HasMaxSize,
 {
     /// Splice syscalls from the corpus into the input
     fn mutate(&mut self, state: &mut S, input: &mut SyscallInput) -> Result<MutationResult, Error> {
@@ -35,11 +38,11 @@ where
 
         // Choose a random corpus entry and position to splice
         let id = random_corpus_id!(state.corpus(), state.rand_mut());
-        let pos = state.rand_mut().below(input.len());
+        let pos = state.rand_mut().below(input.len().try_into().unwrap());
 
         // Get the calls from the corpus entry
-        let other = state.corpus().get(id)?.borrow();
-        let other = other.input().as_ref().cloned().unwrap();
+        let other = state.corpus().get(id)?;
+        let other = other.borrow().input().as_ref().cloned().unwrap();
 
         // Replace input calls after the position with the calls from the corpus entry
         input.splice(pos, other.take().into_iter());
@@ -77,13 +80,15 @@ where
         }
 
         // Choose a random position to insert the new syscalls
-        let pos = state.rand_mut().below(input.len());
+        let pos = state.rand_mut().below(input.len().try_into().unwrap());
 
         // Create context at the insertion point
         let mut context = Context::with_calls(self.metadata.clone(), &input.calls()[..pos]);
 
         // Choose a random syscall to insert
-        let idx = state.rand_mut().below(self.metadata.syscalls().len());
+        let idx = state
+            .rand_mut()
+            .below(self.metadata.syscalls().len().try_into().unwrap());
         let syscall = &self.metadata.syscalls()[idx];
 
         // Generate syscall
@@ -122,7 +127,7 @@ where
         }
 
         // Choose a random call to mutate
-        let call_pos = state.rand_mut().below(input.len());
+        let call_pos = state.rand_mut().below(input.len().try_into().unwrap());
         let mut ctx = Context::with_calls(self.metadata.clone(), &input.calls()[..call_pos]);
         let call = input.get_mut(call_pos);
         let syscall = self
@@ -134,7 +139,9 @@ where
         if syscall.fields().len() == 0 {
             return Ok(MutationResult::Skipped);
         }
-        let arg_pos = state.rand_mut().below(syscall.fields().len());
+        let arg_pos = state
+            .rand_mut()
+            .below(syscall.fields().len().try_into().unwrap());
         let field = &syscall.fields()[arg_pos];
         let arg = &mut call.args_mut()[arg_pos];
         let calls = field.mutate(state.rand_mut(), &mut ctx, arg);
@@ -171,7 +178,7 @@ where
             return Ok(MutationResult::Skipped);
         }
 
-        let pos = state.rand_mut().below(input.len());
+        let pos = state.rand_mut().below(input.len().try_into().unwrap());
         input.remove(pos, &self.metadata);
 
         debug!("[SyscallRemoveMutator::mutate] Removed call at position {pos}",);

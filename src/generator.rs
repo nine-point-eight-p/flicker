@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
-use libafl::HasMetadata;
-use libafl::{generators::Generator, state::HasRand, Error};
+use libafl::{generators::Generator, state::HasRand, Error, HasMetadata};
 use libafl_bolts::rands::Rand;
 
 use log::info;
@@ -36,7 +35,7 @@ where
         let mut calls = vec![];
         let mut size = 0;
         while size < self.max_size {
-            let idx = rand.below(self.context.syscalls().len());
+            let idx = rand.below(self.context.syscalls().len().try_into().unwrap());
             let syscall = self.context.syscalls()[idx].clone();
             let new_calls = generate_call(rand, &mut self.context, &syscall);
             size += new_calls.len();
@@ -62,6 +61,10 @@ where
     S: HasRand + HasMetadata,
 {
     pub fn new(max_size: usize, context: Context) -> Self {
+        assert!(
+            max_size > 0,
+            "The max number of generated calls has to be positive"
+        );
         Self {
             max_size,
             context,

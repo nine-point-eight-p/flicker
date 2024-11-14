@@ -1,5 +1,7 @@
 //! Command line interface for flicker
 
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -35,25 +37,25 @@ pub struct FuzzOption {
 
     /// Path to the directory of initial provided corpus
     #[arg(long, default_value = "./corpus/init")]
-    pub init_corpus: String,
+    pub init_corpus: PathBuf,
 
     /// Path to the directory of generated corpus
     #[arg(long, default_value = "./corpus/gen")]
-    pub gen_corpus: String,
+    pub gen_corpus: PathBuf,
 
     /// Path to the directory of crashes
     #[arg(long, default_value = "./crashes")]
-    pub crash: String,
+    pub crash: PathBuf,
 
     /// Path to the description file
     #[cfg(not(feature = "bytes"))]
     #[arg(long)]
-    pub desc: String,
+    pub desc: PathBuf,
 
     /// Path to the constants file
     #[cfg(not(feature = "bytes"))]
     #[arg(long)]
-    pub r#const: String,
+    pub r#const: PathBuf,
 
     /// Max number of calls per run
     #[cfg(not(feature = "bytes"))]
@@ -67,14 +69,14 @@ pub struct FuzzOption {
 
     /// Arguments passed to Qemu
     #[arg(num_args = 0.., allow_hyphen_values = true)]
-    pub run_args: Vec<String>,
+    pub args: Vec<String>,
 }
 
 /// Reproduction options
 #[derive(Args)]
 pub struct ReproduceOption {
     /// Path to the testcase file
-    pub testcase: String,
+    pub testcase: PathBuf,
 
     /// Time limit for each run of the target
     #[arg(short, long, default_value_t = 3)]
@@ -82,7 +84,7 @@ pub struct ReproduceOption {
 
     /// Arguments passed to Qemu
     #[arg(num_args = 0.., allow_hyphen_values = true)]
-    pub run_args: Vec<String>,
+    pub args: Vec<String>,
 }
 
 pub fn parse() -> Cli {

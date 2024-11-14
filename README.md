@@ -74,13 +74,25 @@ flicker 的主要特点有：
 
 ### 准备环境
 
+已在 Ubuntu 24.04 上测试，可能至少需要 Ubuntu 22.04 或更高版本。
+
 1. 安装 LLVM（以 15 为例，请参考 [LibAFL 推荐的 LLVM 版本](https://github.com/AFLplusplus/LibAFL#building-and-installing)）：
 
     ```bash
     sudo apt-get install llvm-15 llvm-15-dev
     ```
 
-2. 安装 [cargo-make](https://github.com/sagiegurari/cargo-make)：
+    编译本项目时，可能需要通过环境变量 `LLVM_CONFIG` 指定 LLVM 版本，或通过 `LLVM_CONFIG_PATH` 指定 LLVM 路径。
+
+2. 本项目需要编译经 LibAFL 改动的 [QEMU](https://github.com/AFLplusplus/qemu-libafl-bridge)。安装 ninja、glib-2.0、libclang 等编译 QEMU 所需依赖：
+
+    ```bash
+    sudo apt-get install ninja libglib2.0-dev libclang-dev
+    ```
+
+    glib-2.0 的版本需要 `>=2.66.0`。编译 QEMU 的过程中可能会提示需要安装 tomli。
+
+3. 安装 [cargo-make](https://github.com/sagiegurari/cargo-make)：
 
     ```bash
     cargo install cargo-make
@@ -154,7 +166,7 @@ flicker 还提供了测例复现功能，请参考 `makefiles/Alien.toml` 中的
 
 ## TODO
 
-- [ ] 更新 LibAFL 依赖。
+- [x] 更新 LibAFL 依赖。
 
 - [ ] 支持更多 syzlang 类型，如 `array`、`struct`、`union` 等。
 
